@@ -13,11 +13,11 @@ COPY tsconfig.json ./
 # Instala TODAS as dependências (dev e prod) para o build funcionar
 RUN npm install
 
-# Copia o restante do código fonte (da pasta projetoigreja)
-COPY projetoigreja/src ./src
+# Copia o restante do código fonte
+COPY src ./src
 
 # Copia a pasta pública (Dashboard)
-COPY projetoigreja/public ./public
+COPY public ./public
 
 # Compila o TypeScript para JavaScript (gera a pasta dist)
 RUN npm run build
