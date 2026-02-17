@@ -3,8 +3,8 @@ import { supabase } from '../config/supabase';
 import { waService } from './whatsapp';
 import { generateResponse } from './ai'; // Usar IA para gerar devocional se possível
 
-// Configuração do ID do grupo da igreja via .env
-const CHURCH_GROUP_ID = process.env.WHATSAPP_GROUP_ID || '';
+// Configuração do ID do grupo da igreja via .env ou Hardcoded (Correção solicitada)
+const CHURCH_GROUP_ID = process.env.WHATSAPP_GROUP_ID || '120363134268223078@g.us';
 // Número do Pastor ou Líder Principal para notificações
 const LEADER_PHONE = process.env.LEADER_PHONE || '';
 
@@ -44,7 +44,17 @@ export function initScheduler() {
         for (const member of birthdays) {
             if (member.phone) {
                 const msg = `Olá *${member.name}*, a paz! 🕊️\n\nFeliz aniversário! 🎉🎂\nQue Deus continue te abençoando ricamente neste novo ciclo. Nós da Paz Church amamos você! ❤️`;
-                const jid = `${member.phone}@s.whatsapp.net`; // Formata número
+
+                // Lógica de JID inteligente (igual ao whatsapp.ts)
+                let jid = member.phone;
+                if (!jid.includes('@')) {
+                    if (jid.length >= 14) {
+                        jid = `${jid}@lid`;
+                    } else {
+                        jid = `${jid}@s.whatsapp.net`;
+                    }
+                }
+
                 await waService.sendMessage(jid, msg);
             }
         }
