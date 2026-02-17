@@ -1,0 +1,91 @@
+import cron from 'node-cron';
+import { supabase } from '../config/supabase';
+import { waService } from './whatsapp';
+import { generateResponse } from './ai'; // Usar IA para gerar devocional se possível
+
+// Configuração do ID do grupo da igreja via .env
+const CHURCH_GROUP_ID = process.env.WHATSAPP_GROUP_ID || '';
+// Número do Pastor ou Líder Principal para notificações
+const LEADER_PHONE = process.env.LEADER_PHONE || '';
+
+export function initScheduler() {
+    console.log('📅 Inicializando agendador de tarefas...');
+
+    // Tarefa 1: Verificar aniversariantes todos os dias às 08:00
+    cron.schedule('0 8 * * *', async () => {
+        console.log('🔍 Verificando aniversariantes do dia...');
+        const today = new Date();
+        const day = today.getDate();
+        const month = today.getMonth() + 1; // JS months are 0-indexed
+
+        const { data: members, error } = await supabase.from('members').select('*');
+
+        if (error || !members) {
+            console.error('Erro ao buscar membros para aniversário:', error);
+            return;
+        }
+
+        const birthdays = members.filter((m: any) => {
+            if (!m.birth_date) return false;
+            // Robustez: aceitar Date object ou string YYYY-MM-DD
+            const bdate = new Date(m.birth_date);
+            // Resetar time para evitar bugs de fuso se vier com T00:00:00.000Z
+            return bdate.getUTCDate() === day && (bdate.getUTCMonth() + 1) === month;
+        });
+
+        if (birthdays.length === 0) {
+            console.log('Nenhum aniversariante hoje.');
+            return;
+        }
+
+        console.log(`🎉 Encontrados ${birthdays.length} aniversariantes.`);
+
+        // 1. Mandar DM privada para CADA UM
+        for (const member of birthdays) {
+            if (member.phone) {
+                const msg = `Olá *${member.name}*, a paz! 🕊️\n\nFeliz aniversário! 🎉🎂\nQue Deus continue te abençoando ricamente neste novo ciclo. Nós da Paz Church amamos você! ❤️`;
+                const jid = `${member.phone}@s.whatsapp.net`; // Formata número
+                await waService.sendMessage(jid, msg);
+            }
+        }
+
+        // 2. Mandar no Grupo (AGRUPADO - Melhoria 11)
+        if (CHURCH_GROUP_ID) {
+            const names = birthdays.map((m: any) => `• ${m.name}`).join('\n');
+            const groupMsg = `🎉 *ANIVERSARIANTES DO DIA* 🎉\n\nHoje é dia de festa! Vamos parabenizar:\n\n${names}\n\nDeixem seus parabéns aqui! 👏👏🎈`;
+            await waService.sendMessage(CHURCH_GROUP_ID, groupMsg);
+        }
+    });
+
+    // Tarefa 3: Devocional Diário (Melhoria 6) - Todo dia às 06:00
+    cron.schedule('0 6 * * *', async () => {
+        if (!CHURCH_GROUP_ID) return;
+
+        console.log('📖 Enviando devocional diário...');
+
+        // Tentar gerar via IA ou usar lista pré-definida
+        try {
+            // Prompt para a IA gerar um devocional curto
+            const prompt = "Gere um devocional curto, inspirador e cristão para bom dia, com um versículo chave e uma breve reflexão de 1 parágrafo. Termine com uma oração curta. Use emojis.";
+            const devocional = await generateResponse(prompt);
+
+            if (devocional && !devocional.includes("Desculpe")) {
+                const msg = `☀️ *Bom dia Família!* ☀️\n\n${devocional}\n\nTenham um dia abençoado! 🙏`;
+                await waService.sendMessage(CHURCH_GROUP_ID, msg);
+            } else {
+                // Fallback se a IA falhar
+                const fallbackMsg = `☀️ *Bom dia Família!* ☀️\n\n"Este é o dia que fez o Senhor; regozijemo-nos e alegremo-nos nele." - Salmos 118:24 📖\n\nQue seu dia seja cheio da presença de Deus! 🙏`;
+                await waService.sendMessage(CHURCH_GROUP_ID, fallbackMsg);
+            }
+        } catch (e) {
+            console.error("Erro ao gerar devocional:", e);
+        }
+    });
+
+    // Tarefa 4: Lembrete de Culto (Domingo às 09:00 e 17:00)
+    cron.schedule('0 9,17 * * 0', async () => {
+        if (!CHURCH_GROUP_ID) return;
+        const msg = `🚨 *Lembrete de Culto!* 🚨\n\nHojé é dia de Casa do Pai! 🔥\nNão perca, traga sua família e convide um amigo.\n\n📍 Endereço: [Inserir Endereço]\n⏰ Horários: 10h e 18h\n\nEsperamos você! 💒`;
+        await waService.sendMessage(CHURCH_GROUP_ID, msg);
+    });
+}
