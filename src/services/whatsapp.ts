@@ -6,6 +6,7 @@ import pino from 'pino';
 import qrcode from 'qrcode-terminal';
 import { supabase } from '../config/supabase';
 import { findNearestLife } from '../utils/location';
+import { textToSpeech, limparAudioTemp } from './tts';
 
 export class WhatsAppService {
     public sock: WASocket | undefined;
@@ -154,8 +155,10 @@ export class WhatsAppService {
                 }
 
                 // Tratamento de Mídia (Áudio)
+                let isAudioMessage = false; // Flag para responder com áudio quando receber áudio
                 if (msg.message.audioMessage) {
-                    console.log('🎤 Áudio recebido!');
+                    console.log('🎤 Áudio recebido! Vou transcrever e responder com áudio 🔊');
+                    isAudioMessage = true;
                     try {
                         const buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger: pino({ level: 'silent' }), reuploadRequest: this.sock?.updateMediaMessage } as any);
                         const audioPath = path.join(__dirname, `../../temp_audio_${Date.now()}.ogg`);
@@ -402,7 +405,7 @@ Qual é o seu nome completo?`;
 
                     // Ponto 1: Menu Inicial Guiado
                     if (lowerText === 'oi' || lowerText === 'olá' || lowerText === 'ola' || lowerText === 'menu' || lowerText === '/ajuda' || lowerText === 'ajuda') {
-                        const menuText = `Olá! Que bom falar com você! 👋\nComo posso te ajudar hoje?\n\n*Responda com o número da opção desejada:*\n\n1️⃣ Horários dos Cultos e Endereço\n2️⃣ Quero doar (Dízimos e Ofertas)\n3️⃣ Onde tem uma Life (Célula)?\n4️⃣ Falar com a Inteligência Artificial (Dúvidas/Aconselhamento)\n5️⃣ Falar com a Liderança / Pastor (Atendimento Humano)`;
+                        const menuText = `Olá! Que bom falar com você! 👋\nComo posso te ajudar hoje?\n\n*Responda com o número da opção desejada:*\n\n1️⃣ Horários dos Cultos e Endereço\n2️⃣ Quero doar (Dízimos e Ofertas)\n3️⃣ Onde tem uma Life (Célula)?\n4️⃣ Falar com a Inteligência Artificial (Dúvidas/Aconselhamento)\n5️⃣ Falar com a Liderança / Pastor (Atendimento Humano)\n\n🙏 *Comandos Especiais:*\n!oração [seu pedido] - Enviar pedido de oração\n!presente - Registrar presença no culto\n!quiz - Jogar Quiz Bíblico 📚`;
                         await this.sendMessage(remoteJid, menuText);
                         return;
                     }
@@ -442,26 +445,209 @@ Qual é o seu nome completo?`;
                         return;
                     }
 
-                    // Prioridade 2: Conversa com IA (Gemini)
-                    if (lowerText.length > 1) { // Reduzi para > 1 para captar "oi"
+                    // ==========================================
+                    // 🙏 PEDIDO DE ORAÇÃO (!oração ou !oracao)
+                    // ==========================================
+                    if (lowerText.startsWith('!oração') || lowerText.startsWith('!oracao')) {
+                        const pedido = textBody.replace(/^!oração\s*/i, '').replace(/^!oracao\s*/i, '').trim();
+
+                        if (!pedido || pedido.length < 5) {
+                            await this.sendMessage(remoteJid, "Por favor, escreva seu pedido após o comando.\nExemplo: *!oração pela saúde da minha mãe* 🙏");
+                            return;
+                        }
+
+                        // Salva no Supabase (tabela prayer_requests)
+                        const { error: dbErr } = await supabase.from('prayer_requests').insert([{
+                            phone,
+                            member_name: member?.name || 'Anônimo',
+                            request: pedido,
+                            created_at: new Date().toISOString()
+                        }]);
+
+                        if (dbErr) {
+                            console.warn('Tabela prayer_requests pode não existir ainda, pulando salvamento no DB:', dbErr.message);
+                        }
+
+                        // Confirma para o membro
+                        await this.sendMessage(remoteJid, `🙏 *Seu pedido foi recebido!*\n\n"${pedido}"\n\nEstamos orando por você. \"O Senhor é o meu pastor; nada me faltará.\" - Salmos 23:1 💫`);
+
+                        // Notifica o pastor com o pedido
+                        if (this.LEADER_PHONE) {
+                            const leaderJid = this.LEADER_PHONE.includes('@') ? this.LEADER_PHONE : `${this.LEADER_PHONE}@s.whatsapp.net`;
+                            const leaderMsg = `🙏 *NOVO PEDIDO DE ORAÇÃO*\n\n*De:* ${member?.name || phone}\n*Pedido:* ${pedido}\n\nOre por este membro! 💫`;
+                            await this.sendMessage(leaderJid, leaderMsg);
+                        }
+                        return;
+                    }
+
+                    // ==========================================
+                    // ✅ CHECK-IN DE PRESENÇA (!presente)
+                    // ==========================================
+                    if (lowerText === '!presente' || lowerText === '!checkin' || lowerText === '!check-in') {
+                        const now = new Date();
+                        const diaSemana = now.getDay(); // 0 = Domingo
+
+                        // Salva a presença no Supabase (tabela attendance)
+                        const { error: attErr } = await supabase.from('attendance').insert([{
+                            phone,
+                            member_name: member?.name || 'Anônimo',
+                            checked_in_at: now.toISOString(),
+                            day_of_week: diaSemana
+                        }]);
+
+                        if (attErr) {
+                            console.warn('Tabela attendance pode não existir ainda:', attErr.message);
+                        }
+
+                        let resposta = '';
+                        if (diaSemana === 0) {
+                            // É domingo
+                            resposta = `✅ *Presença registrada!*\n\nQue ótimo ter você aqui hoje, *${member?.name || 'irmão(a)'}*! 🔥\nQue o culto de hoje seja cheio da presença de Deus! 🙏👏`;
+                        } else {
+                            resposta = `✅ *Presença registrada!*\n\nVocê registrou presença hoje. Que bom!\n\nLembre-se: o próximo culto é no *Domingo às 17h30* na Paz Church. \nEsperamos você! 📸🙏`;
+                        }
+
+                        await this.sendMessage(remoteJid, resposta);
+                        return;
+                    }
+
+                    // ==========================================
+                    // 💝 QUIZ BÍBLICO (!quiz)
+                    // ==========================================
+                    if (lowerText === '!quiz' || lowerText.startsWith('!quiz')) {
                         try {
                             const { generateResponse } = await import('./ai');
 
-                            // Envia estado "digitando..."
+                            if (this.sock) await this.sock.sendPresenceUpdate('composing', remoteJid);
+
+                            const quizPrompt = `Crie UMA pergunta de quiz bíblico divertida e educativa para um membro da igreja. 
+Formato obrigatório:
+📚 *Pergunta:* [pergunta aquí]
+
+a) [opção]
+b) [opção]
+c) [opção]
+d) [opção]
+
+🔑 *Resposta:* [letra e explicação curta e divertida com versículo]
+
+Faça perguntas variadas (pode ser sobre personagens bíblicos, versículos famosos, eventos do AT ou NT). Use emojis. Seja em Português do Brasil.`;
+
+                            const quiz = await generateResponse(quizPrompt);
+
+                            if (this.sock) await this.sock.sendPresenceUpdate('available', remoteJid);
+
+                            if (quiz) {
+                                await this.sendMessage(remoteJid, `🌟 *QUIZ BÍBLICO* 🌟\n\n${quiz}\n\n_Digite !quiz para uma nova pergunta!_ 😄`);
+                            } else {
+                                await this.sendMessage(remoteJid, "Ops! Não consegui gerar o quiz agora. Tente de novo! 😁");
+                            }
+                        } catch (e) {
+                            console.error('Erro no quiz:', e);
+                            await this.sendMessage(remoteJid, "Erro no quiz. Tente em instantes! 🙏");
+                        }
+                        return;
+                    }
+
+                    // ==========================================
+                    // 📊 STATS DO PASTOR (!stats) - SÓ PARA O LIDER
+                    // ==========================================
+                    if (lowerText === '!stats' || lowerText === '!relatorio' || lowerText === '!relatório') {
+                        // Verifica se é o pastor
+                        const leaderClean = this.LEADER_PHONE?.replace(/\D/g, '') || '';
+                        const isLeader = phone === leaderClean || phone.endsWith(leaderClean) || leaderClean.endsWith(phone);
+
+                        if (!isLeader) {
+                            await this.sendMessage(remoteJid, "Este comando é exclusivo da liderança. 🙏");
+                            return;
+                        }
+
+                        try {
+                            // Total de membros
+                            const { count: totalMembers } = await supabase
+                                .from('members').select('*', { count: 'exact', head: true });
+
+                            // Novos esta semana
+                            const umaSemanaAtras = new Date();
+                            umaSemanaAtras.setDate(umaSemanaAtras.getDate() - 7);
+                            const { count: newThisWeek } = await supabase
+                                .from('members')
+                                .select('*', { count: 'exact', head: true })
+                                .gte('created_at', umaSemanaAtras.toISOString());
+
+                            // Presenças esta semana
+                            const { count: attendanceWeek } = await supabase
+                                .from('attendance')
+                                .select('*', { count: 'exact', head: true })
+                                .gte('checked_in_at', umaSemanaAtras.toISOString());
+
+                            // Pedidos de oração pendentes
+                            const { count: prayerCount } = await supabase
+                                .from('prayer_requests')
+                                .select('*', { count: 'exact', head: true })
+                                .gte('created_at', umaSemanaAtras.toISOString());
+
+                            const dataHoje = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
+
+                            const stats = `📊 *RELATÓRIO DA IGREJA*\n_${dataHoje}_\n\n` +
+                                `🧑\u200d💼 *Total de Membros:* ${totalMembers || 0}\n` +
+                                `🌱 *Novos essa semana:* ${newThisWeek || 0}\n` +
+                                `✅ *Check-ins essa semana:* ${attendanceWeek || 0}\n` +
+                                `🙏 *Pedidos de oração (7d):* ${prayerCount || 0}\n\n` +
+                                `🤖 Bot: ${waService.isConnected ? '🟢 Online' : '🔴 Offline'}\n\n` +
+                                `_Glória a Deus! 🕊️_`;
+
+                            await this.sendMessage(remoteJid, stats);
+
+                        } catch (e) {
+                            console.error('Erro ao gerar stats:', e);
+                            await this.sendMessage(remoteJid, "Erro ao gerar relatório. Tente de novo.");
+                        }
+                        return;
+                    }
+
+                    // Prioridade 2: Conversa com IA
+                    if (lowerText.length > 1) {
+                        // Comando especial !audio para forçar resposta em áudio
+                        let forcarAudio = false;
+                        let textoParaIA = textBody;
+                        if (lowerText.startsWith('!audio ')) {
+                            forcarAudio = true;
+                            textoParaIA = textBody.substring(7).trim();
+                        }
+
+                        try {
+                            const { generateResponse } = await import('./ai');
+
+                            // Envia estado "gravando" se for responder com áudio, "digitando" se for texto
                             if (this.sock) {
-                                await this.sock.sendPresenceUpdate('composing', remoteJid);
+                                const presenceType = (isAudioMessage || forcarAudio) ? 'recording' : 'composing';
+                                await this.sock.sendPresenceUpdate(presenceType, remoteJid);
                             }
 
-                            const aiResponse = await generateResponse(textBody, imageBase64, imageMimeType);
+                            const aiResponse = await generateResponse(textoParaIA, imageBase64, imageMimeType);
 
-                            // DEBUG: Verifique se o response vem vazio
                             if (!aiResponse) {
                                 console.warn("IA retornou resposta vazia.");
+                            } else if (isAudioMessage || forcarAudio) {
+                                // 🔊 RESPONDER COM ÁUDIO (quando recebeu áudio OU quando usou !audio)
+                                console.log('🔊 Gerando resposta em áudio...');
+                                const audioFilePath = await textToSpeech(aiResponse);
+
+                                if (audioFilePath) {
+                                    await this.sendAudioMessage(remoteJid, audioFilePath);
+                                    limparAudioTemp(audioFilePath);
+                                } else {
+                                    // Fallback: envia como texto se o áudio falhar
+                                    console.warn('⚠️ TTS falhou, enviando como texto.');
+                                    await this.sendMessage(remoteJid, aiResponse);
+                                }
                             } else {
+                                // Resposta normal em texto
                                 await this.sendMessage(remoteJid, aiResponse);
                             }
 
-                            // Para de "digitar"
+                            // Para de "digitar" / "gravar"
                             if (this.sock) {
                                 await this.sock.sendPresenceUpdate('available', remoteJid);
                             }
@@ -537,6 +723,37 @@ Qual é o seu nome completo?`;
         } catch (error) {
             console.error(`❌ Erro ao enviar para ${jid}:`, error);
             // Se falhou com @lid, tenta @s.whatsapp.net como fallback (e vice-versa é perigoso, melhor não)
+        }
+    }
+
+    /**
+     * Envia uma mensagem de áudio/voz (nota de voz PTT) pelo WhatsApp.
+     * @param to - JID do destinatário
+     * @param audioPath - Caminho do arquivo de áudio (.ogg ou .mp3)
+     */
+    async sendAudioMessage(to: string, audioPath: string) {
+        if (!this.sock || !to) return;
+
+        let jid = to;
+        if (!jid.includes('@')) {
+            jid = jid.length >= 14 ? `${jid}@lid` : `${jid}@s.whatsapp.net`;
+        }
+
+        try {
+            const audioBuffer = fs.readFileSync(audioPath);
+            const isOgg = audioPath.endsWith('.ogg');
+
+            console.log(`📤 Enviando áudio de voz para: ${jid}`);
+
+            await this.sock.sendMessage(jid, {
+                audio: audioBuffer,
+                mimetype: isOgg ? 'audio/ogg; codecs=opus' : 'audio/mpeg',
+                ptt: true, // PTT = Push To Talk = nota de voz (bolinha de áudio)
+            });
+            console.log(`✅ Áudio enviado para ${jid}`);
+        } catch (error) {
+            console.error(`❌ Erro ao enviar áudio para ${jid}:`, error);
+            // Fallback: tenta enviar como mensagem de texto informando o erro
         }
     }
 

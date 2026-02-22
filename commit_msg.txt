@@ -1,0 +1,13 @@
+feat: melhoras no bot - novo modelo IA, TTS audio gratuito e novas funcionalidades
+
+- Corrige modelo depreciado llama-3.2-11b-vision-preview para meta-llama/llama-4-scout-17b-16e-instruct
+- Adiciona servico TTS gratuito (Microsoft Edge TTS) para respostas em audio de voz
+- Bot responde com nota de voz quando recebe audio do usuario
+- Novo comando !audio para forcar resposta em voz
+- Novo comando !oracao - salva pedido no Supabase e notifica pastor
+- Novo comando !presente - check-in de presenca no culto com registro no banco
+- Novo comando !quiz - quiz biblico gerado por IA com perguntas variaveis
+- Novo comando !stats (exclusivo pastor) - relatorio da igreja direto no WhatsApp
+- Menu atualizado com novos comandos especiais listados
+- Adiciona SUPABASE_NOVAS_TABELAS.sql com tabelas prayer_requests e attendance
+- Instala dependencia edge-tts-node

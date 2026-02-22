@@ -58,7 +58,8 @@ export async function generateResponse(userMessage: string, imageBase64?: string
                 },
             ],
             // Modelo que suporta visão se tiver imagem, caso contrário o padrão
-            model: imageBase64 ? "llama-3.2-11b-vision-preview" : "llama-3.3-70b-versatile",
+            // llama-4-scout suporta multimodal (texto + imagem) e é o substituto recomendado pela Groq
+            model: imageBase64 ? "meta-llama/llama-4-scout-17b-16e-instruct" : "llama-3.3-70b-versatile",
             temperature: 0.7,
             max_tokens: 500,
         });
