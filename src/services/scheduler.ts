@@ -67,8 +67,8 @@ export function initScheduler() {
         }
     });
 
-    // Tarefa 3: Devocional Diário (Melhoria 6) - Todo dia às 06:00
-    cron.schedule('0 6 * * *', async () => {
+    // Tarefa 3: Devocional Diário (Melhoria 6) - Todo dia às 06:30
+    cron.schedule('30 6 * * *', async () => {
         if (!CHURCH_GROUP_ID) return;
 
         console.log('📖 Enviando devocional diário...');
@@ -92,10 +92,10 @@ export function initScheduler() {
         }
     });
 
-    // Tarefa 4: Lembrete de Culto (Domingo às 09:00 e 17:00)
-    cron.schedule('0 9,17 * * 0', async () => {
+    // Tarefa 4: Lembrete de Culto (Domingo às 09:00)
+    cron.schedule('0 9 * * 0', async () => {
         if (!CHURCH_GROUP_ID) return;
-        const msg = `🚨 *Lembrete de Culto!* 🚨\n\nHojé é dia de Casa do Pai! 🔥\nNão perca, traga sua família e convide um amigo.\n\n📍 Endereço: [Inserir Endereço]\n⏰ Horários: 10h e 18h\n\nEsperamos você! 💒`;
+        const msg = `🚨 *Lembrete de Culto!* 🚨\n\nHojé é dia de Casa do Pai! 🔥\nNão perca, traga sua família e convide um amigo.\n\n📍 Paz Church Paraipaba\nRua Antônio Henrique, 363, Centro (Ao lado do Estádio Municipal)\n⏰ Horário do culto: 17:30\n\nEsperamos você! 💒`;
         await waService.sendMessage(CHURCH_GROUP_ID, msg);
     });
 }

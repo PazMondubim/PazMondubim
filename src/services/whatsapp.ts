@@ -1,4 +1,4 @@
-import { default as makeWASocket, useMultiFileAuthState, DisconnectReason, WASocket, WAMessage, proto } from '@whiskeysockets/baileys';
+import { default as makeWASocket, useMultiFileAuthState, DisconnectReason, WASocket, WAMessage, proto, downloadMediaMessage } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -41,6 +41,9 @@ export class WhatsAppService {
                 logger: pino({ level: 'silent' }), // Voltei para silent para não poluir
                 auth: state,
                 printQRInTerminal: true, // Voltei para true para garantir que o QR apareça no terminal se o navegador falhar
+                syncFullHistory: false, // Menos uso de recursos / Menos chance de travar ao sincronizar tudo
+                markOnlineOnConnect: true, // Força status online
+                keepAliveIntervalMs: 30000, // Mantém a conexão websocket ativa por mais tempo
             });
 
             this.sock.ev.on('connection.update', (update: any) => {
@@ -90,10 +93,11 @@ export class WhatsAppService {
                         setTimeout(() => this.connectToWhatsApp(), 5000);
 
                     } else if (shouldReconnect) {
-                        if (this.retryCount < this.MAX_RETRIES) {
-                            console.log('🔄 Tentando reconectar em 5 segundos...');
-                            setTimeout(() => this.connectToWhatsApp(), 5000);
-                        }
+                        this.retryCount++;
+                        console.log(`🔄 Tentando reconectar em 5 segundos... (Tentativas: ${this.retryCount})`);
+                        // Removemos o limite de retries porque sem internet no celular principal, 
+                        // a conexão com o servidor do Baileys ainda pode oscilar e ele NÃO deve desligar!
+                        setTimeout(() => this.connectToWhatsApp(), 5000);
                     }
                 } else if (connection === 'open') {
                     console.log('✅ Conectado ao WhatsApp com sucesso!');
@@ -124,21 +128,61 @@ export class WhatsAppService {
                 const fromMe = msg.key.fromMe;
                 if (fromMe) return;
 
-                // Tratamento de Texto Simples
-                const textBody = msg.message.conversation || msg.message.extendedTextMessage?.text;
-
                 // --- DEBUG TOTAL ---
                 console.log('\n=======================================');
                 console.log('📩 MENSAGEM RECEBIDA!');
                 console.log(`🆔 JID: ${remoteJid}`);
                 console.log(`👤 É de arquivo/status? ${msg.key.remoteJid === 'status@broadcast' ? 'SIM' : 'NÃO'}`);
 
+                let textBody = msg.message.conversation || msg.message.extendedTextMessage?.text;
+                let imageBase64: string | undefined;
+                let imageMimeType: string | undefined;
+
                 // Tratamento de Mídia (Imagens)
                 if (msg.message.imageMessage) {
                     console.log('🖼️ Imagem recebida!');
-                    // Futuramente: baixar imagem, salvar no Supabase Storage ou mandar para IA Vision
-                    await this.sendMessage(remoteJid, "Obrigado pela foto! 📸 Ainda estou aprendendo a ver imagens, mas em breve vou conseguir analisar!");
-                    return;
+                    try {
+                        const buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger: pino({ level: 'silent' }), reuploadRequest: this.sock?.updateMediaMessage } as any);
+                        imageBase64 = (buffer as Buffer).toString('base64');
+                        imageMimeType = msg.message.imageMessage.mimetype || 'image/jpeg';
+                        textBody = msg.message.imageMessage.caption || "Analise esta foto por favor e reaja como a instrução manda.";
+                    } catch (err) {
+                        console.error("Erro ao baixar imagem:", err);
+                        await this.sendMessage(remoteJid, "Não consegui visualizar sua foto direito. Tem como tentar de novo? 🙏");
+                        return;
+                    }
+                }
+
+                // Tratamento de Mídia (Áudio)
+                if (msg.message.audioMessage) {
+                    console.log('🎤 Áudio recebido!');
+                    try {
+                        const buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger: pino({ level: 'silent' }), reuploadRequest: this.sock?.updateMediaMessage } as any);
+                        const audioPath = path.join(__dirname, `../../temp_audio_${Date.now()}.ogg`);
+                        fs.writeFileSync(audioPath, (buffer as Buffer));
+
+                        const { transcribeAudio } = await import('./ai');
+
+                        if (this.sock) {
+                            await this.sock.sendPresenceUpdate('recording', remoteJid);
+                        }
+
+                        const textFromAudio = await transcribeAudio(fs.createReadStream(audioPath));
+                        fs.unlinkSync(audioPath); // remover o arquivo depois
+
+                        if (textFromAudio) {
+                            textBody = textFromAudio;
+                            console.log(`🗣️ Transcrição do áudio: ${textBody}`);
+                        } else {
+                            await this.sendMessage(remoteJid, "Não consegui entender muito bem o áudio. Pode digitar? 🙏");
+                            return;
+                        }
+
+                    } catch (err) {
+                        console.error("Erro ao transcrever áudio:", err);
+                        await this.sendMessage(remoteJid, "Deu erro para escutar seu áudio agora, me mande por texto se puder. 🙏");
+                        return;
+                    }
                 }
 
                 console.log(`📝 Texto: ${textBody || '[Sem Texto]'}`);
@@ -356,16 +400,46 @@ Qual é o seu nome completo?`;
                         return;
                     }
 
-                    // Melhoria 8: Comando /ajuda interativo
-                    if (lowerText === '/ajuda' || lowerText === 'ajuda' || lowerText === 'menu') {
-                        const helpText = `🤖 *Central de Ajuda - Agente Igreja*\n\nAqui estão algumas coisas que posso fazer por você:\n\n📍 *Encontrar Célula:* Digite "quero visitar uma célula" ou "onde tem uma life"\n🙏 *Pedido de Oração:* Digite "preciso de oração"\n📅 *Horários:* Digite "horário dos cultos"\n👤 *Cadastro:* Se ainda não é cadastrado, digite "Oi" para começar.\n\nOu simplesmente converse comigo! Estou aqui para te ouvir. 😊`;
-                        await this.sendMessage(remoteJid, helpText);
+                    // Ponto 1: Menu Inicial Guiado
+                    if (lowerText === 'oi' || lowerText === 'olá' || lowerText === 'ola' || lowerText === 'menu' || lowerText === '/ajuda' || lowerText === 'ajuda') {
+                        const menuText = `Olá! Que bom falar com você! 👋\nComo posso te ajudar hoje?\n\n*Responda com o número da opção desejada:*\n\n1️⃣ Horários dos Cultos e Endereço\n2️⃣ Quero doar (Dízimos e Ofertas)\n3️⃣ Onde tem uma Life (Célula)?\n4️⃣ Falar com a Inteligência Artificial (Dúvidas/Aconselhamento)\n5️⃣ Falar com a Liderança / Pastor (Atendimento Humano)`;
+                        await this.sendMessage(remoteJid, menuText);
                         return;
                     }
 
-                    if (lowerText.includes('life') || lowerText.includes('célula') || lowerText.includes('celula') || lowerText.includes('visitar')) {
-                        await this.sendMessage(remoteJid, "Olá! Para eu encontrar uma Life (Célula) pertinho de você, por favor, clique no clipe 📎 abaixo e envie sua *Localização Atual*. É rapidinho!");
-                        return; // Retorna para não cair na IA
+                    // Respostas Automáticas do Menu
+                    if (lowerText === '1') {
+                        await this.sendMessage(remoteJid, `📍 *Paz Church Paraipaba*\nRua Antônio Henrique, 363, Centro (Ao lado do Estádio Municipal)\n\n⏰ *Nossos Horários:*\nDomingo às 17h30\n\nEsperamos por você e sua família! �`);
+                        return;
+                    }
+
+                    if (lowerText === '2' || lowerText.includes('doar') || lowerText.includes('dízimo') || lowerText.includes('oferta') || lowerText.includes('pix')) {
+                        // Ponto 3: Módulo de Contribuições (PIX)
+                        await this.sendMessage(remoteJid, `Que bênção! 🙏 Sua contribuição ajuda a expandir o Reino de Deus.\n\n📱 *Nossa Chave PIX (CNPJ)*:\n*56.895.009/0001-62*\n\nNome: Paz Church Paraipaba\n\n*"Cada um dê conforme determinou em seu coração, não com pesar ou por obrigação, pois Deus ama quem dá com alegria." - 2 Coríntios 9:7* 📖`);
+                        return;
+                    }
+
+                    if (lowerText === '3' || lowerText.includes('life') || lowerText.includes('célula') || lowerText.includes('celula') || lowerText.includes('visitar')) {
+                        // Ponto 4: Onde tem uma Life
+                        await this.sendMessage(remoteJid, "Para eu encontrar a Life (Célula) mais próxima de você, por favor, clique no clipe 📎 aqui embaixo e me envie a sua *Localização Atual*. É rapidão! 📍");
+                        return;
+                    }
+
+                    if (lowerText === '5' || lowerText.includes('falar com o pastor') || lowerText.includes('atendimento humano')) {
+                        // Ponto 6: Atendimento Humano (Transbordo)
+                        await this.sendMessage(remoteJid, "Compreendo. Estou transferindo o seu contato para a nossa Liderança/Pastor. Eles te responderão o mais rápido possível através deste mesmo número. 🙏");
+
+                        if (this.LEADER_PHONE) {
+                            const leaderJid = this.LEADER_PHONE.includes('@') ? this.LEADER_PHONE : `${this.LEADER_PHONE}@s.whatsapp.net`;
+                            await this.sendMessage(leaderJid, `⚠️ *ATENDIMENTO HUMANO SOLICITADO* ⚠️\n\nO membro no número ${phone} pediu para falar com a Liderança.\nPor favor, responda a ele assim que possível.`);
+                        }
+
+                        return;
+                    }
+
+                    if (lowerText === '4') {
+                        await this.sendMessage(remoteJid, "Pode falar! Do que você precisa? Estou aqui pra te ouvir e aconselhar usando a Palavra de Deus. ✨");
+                        return;
                     }
 
                     // Prioridade 2: Conversa com IA (Gemini)
@@ -378,7 +452,7 @@ Qual é o seu nome completo?`;
                                 await this.sock.sendPresenceUpdate('composing', remoteJid);
                             }
 
-                            const aiResponse = await generateResponse(textBody);
+                            const aiResponse = await generateResponse(textBody, imageBase64, imageMimeType);
 
                             // DEBUG: Verifique se o response vem vazio
                             if (!aiResponse) {

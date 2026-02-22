@@ -107,13 +107,18 @@
 
                     <input type="file" id="broadcastImg" accept="image/png, image/jpeg, image/webp"
                         class="w-full mb-3 p-3 border border-gray-200 rounded-xl bg-gray-50 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Agendar Disparo (Opcional)</label>
+                    <input type="datetime-local" id="broadcastTime"
+                        class="w-full mb-3 p-3 border border-gray-200 rounded-xl bg-gray-50 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none text-gray-600">
+
                     <textarea id="broadcastMsg" rows="6"
                         class="w-full p-4 border border-gray-200 rounded-xl bg-gray-50 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition resize-none"
                         placeholder="Digite sua mensagem aqui..."></textarea>
 
                     <button onclick="sendBroadcast()"
                         class="w-full mt-4 py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 hover:shadow-indigo-300 transform hover:-translate-y-0.5 transition-all">
-                        Enviar para Todos 🚀
+                        Agendar / Enviar para Todos 🚀
                     </button>
                 </div>
             </div>
@@ -435,8 +440,8 @@
 
             if (result.isConfirmed) {
                 Swal.fire({
-                    title: 'Enviando...',
-                    text: 'O servidor está processando. Pode fechar se quiser.',
+                    title: 'Processando...',
+                    text: 'O servidor está preparando o disparo. Pode fechar se quiser.',
                     timer: 3000,
                     showConfirmButton: false
                 });
@@ -444,6 +449,11 @@
                 try {
                     const formData = new FormData();
                     formData.append('message', msg);
+
+                    const scheduledTime = document.getElementById('broadcastTime').value;
+                    if (scheduledTime) {
+                        formData.append('scheduledTime', scheduledTime);
+                    }
                     if (file) {
                         formData.append('image', file);
                     }
@@ -462,8 +472,9 @@
                     const data = await res.json();
 
                     if (data.success) {
-                        Swal.fire('Sucesso!', `Disparo iniciado!`, 'success');
+                        Swal.fire('Sucesso!', data.message || `Disparo iniciado!`, 'success');
                         document.getElementById('broadcastMsg').value = '';
+                        document.getElementById('broadcastTime').value = '';
                         fileInput.value = '';
                     } else {
                         Swal.fire('Erro', data.error || 'Houve um problema.', 'error');

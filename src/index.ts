@@ -144,7 +144,7 @@ app.get('/api/lives', async (req, res) => {
 // Disparo em Massa (Imagem + Texto)
 // Correção 19: Validação de arquivo no multer feita antes (poderia ser filtro), ou aqui check manual
 app.post('/api/broadcast', authMiddleware, upload.single('image'), async (req: Request, res: Response) => {
-    const { message } = req.body;
+    const { message, scheduledTime } = req.body;
     const file = req.file;
 
     // Correção 19: Validação de tipo de arquivo
@@ -178,18 +178,23 @@ app.post('/api/broadcast', authMiddleware, upload.single('image'), async (req: R
         // Combinar membros + grupos
         const targets = [...members, ...groups];
 
-        console.log(`Iniciando broadcast para ${targets.length} alvos (${members.length} membros + ${groups.length} grupos)...`);
-        // Debug
-        targets.forEach(t => console.log(` -> Alvo: ${t.name} | ID: ${t.phone}`));
+        let delayMs = 0;
+        if (scheduledTime) {
+            const scheduledDate = new Date(scheduledTime);
+            delayMs = scheduledDate.getTime() - Date.now();
+            if (delayMs < 0) {
+                return res.status(400).json({ error: 'O horário agendado deve ser no futuro.' });
+            }
+        }
 
-        // 2. Enviar mensagem para cada um (com delay aleatório - Correção 7)
-        let count = 0;
+        const isScheduled = delayMs > 0;
+        const msgLog = isScheduled ? `agendado para ${new Date(scheduledTime).toLocaleString('pt-BR')}` : `iniciado agora`;
+        console.log(`Broadcast ${msgLog} para ${targets.length} alvos (${members.length} membros + ${groups.length} grupos)...`);
 
-        // Executar em background para não travar a req se forem muitos
-        // MAS cuidado: se o processo reiniciar, perde. Ideal seria fila.
-        // Para hoje: processamos async e retornamos ok.
-
-        (async () => {
+        // Função de envio
+        const startBroadcast = async () => {
+            let count = 0;
+            console.log(`Iniciando envio real do broadcast programado para ${targets.length} alvos...`);
             for (const target of targets) {
                 // Delay aleatório entre 2s e 5s (Correção 7)
                 const delay = Math.floor(Math.random() * 3000) + 2000;
@@ -210,9 +215,15 @@ app.post('/api/broadcast', authMiddleware, upload.single('image'), async (req: R
                 }
             }
             console.log(`Broadcast finalizado. Enviado para ${count} alvos.`);
-        })();
+        };
 
-        res.json({ success: true, message: `Disparo iniciado para ${targets.length} alvos (incluindo ${groups.length} grupos).` });
+        if (isScheduled) {
+            setTimeout(startBroadcast, delayMs);
+            res.json({ success: true, message: `Disparo agendado para ${new Date(scheduledTime).toLocaleString('pt-BR')} para ${targets.length} alvos.` });
+        } else {
+            startBroadcast(); // Roda em background async
+            res.json({ success: true, message: `Disparo iniciado para ${targets.length} alvos (incluindo ${groups.length} grupos).` });
+        }
 
     } catch (error) {
         console.error('Erro no broadcast:', error);
