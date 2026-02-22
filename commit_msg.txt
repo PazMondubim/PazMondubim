@@ -1,7 +1,11 @@
-fix: corrige erro EdgeTTS is not a constructor no servico TTS
+fix: substitui Edge TTS por Google Translate TTS para funcionar em cloud
 
-- Reescreve tts.ts usando a API correta do edge-tts-node (MsEdgeTTS)
-- Substitui chamada errada new EdgeTTS() pela classe correta new MsEdgeTTS({})
-- Usa setMetadata() + toFile() conforme documentacao do pacote
-- Gera MP3 diretamente sem necessidade de ffmpeg
-- Remove emojis e formatacao WhatsApp antes de sintetizar a voz
+O MsEdgeTTS falha com Connect Error em servidores cloud (Koyeb/Render)
+pois a Microsoft bloqueia conexoes WebSocket de IPs de datacenter.
+
+Nova solucao usa Google Translate TTS via HTTPS nativo do Node.js:
+- Sem pacotes externos (so modulo https built-in)
+- Funciona em qualquer servidor cloud com acesso a internet
+- Voz em Portugues do Brasil (pt-BR) via translate.google.com
+- Retorna MP3 diretamente, sem conversao de formato
+- Inclui timeout de 10s e verificacao de tamanho do arquivo
