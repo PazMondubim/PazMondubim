@@ -3,6 +3,7 @@ import cors from 'cors';
 import { supabase } from './config/supabase';
 import { waService } from './services/whatsapp';
 import { initScheduler } from './services/scheduler';
+import { getFeatures, saveFeatures } from './config/botConfig';
 
 import multer from 'multer';
 
@@ -138,6 +139,33 @@ app.get('/api/lives', async (req, res) => {
     const { data, error } = await supabase.from('lives').select('*');
     if (error) return res.status(500).json({ error });
     res.json(data);
+});
+
+// Configuração dos 79 Módulos da IA
+app.get('/api/features', authMiddleware, (req: Request, res: Response) => {
+    try {
+        const features = getFeatures();
+        res.json(features);
+    } catch (e) {
+        res.status(500).json({ error: 'Erro ao buscar features' });
+    }
+});
+
+app.post('/api/features/toggle', authMiddleware, (req: Request, res: Response) => {
+    const { id, enabled } = req.body;
+    try {
+        const features = getFeatures();
+        const feat = features.find(f => f.id === id);
+        if (feat) {
+            feat.enabled = enabled;
+            saveFeatures(features);
+            res.json({ success: true, feature: feat });
+        } else {
+            res.status(404).json({ error: 'Feature não encontrada' });
+        }
+    } catch (e) {
+        res.status(500).json({ error: 'Erro ao salvar feature' });
+    }
 });
 
 // Criar disparo programado (Simulação - idealmente salva no banco)

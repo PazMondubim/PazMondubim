@@ -171,6 +171,17 @@
             </div>
         </div>
 
+        <!-- AI Features Section -->
+        <div class="mt-8 bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-2">🧠 Gerenciador de Inteligência Artificial (79 Módulos)</h2>
+            <p class="text-sm text-gray-500 mb-6">Ative ou desative as habilidades do Agente Igreja em tempo real. Cada
+                funcionalidade ligada entra automaticamente no contexto neural do robô.</p>
+
+            <div id="featuresContainer" class="space-y-6">
+                <div class="text-center text-gray-400 py-4">Carregando módulos...</div>
+            </div>
+        </div>
+
     </div>
 
     <script>
@@ -210,12 +221,14 @@
                     localStorage.setItem(TOKEN_KEY, token);
                     loadDashboard();
                     loadMembers();
+                    loadFeatures();
                 } else {
                     location.reload();
                 }
             } else {
                 loadDashboard();
                 loadMembers();
+                loadFeatures();
             }
         }
 
@@ -521,6 +534,74 @@
                 }
             } catch (e) {
                 Swal.fire("Erro", "Falha ao alterar estado", "error");
+            }
+        }
+
+        // Features IA
+        async function loadFeatures() {
+            try {
+                const res = await fetch(`${API_URL}/features`, { headers: getHeaders() });
+                if (!res.ok) throw new Error("Erro api features");
+                const features = await res.json();
+
+                // Group by category
+                const byCategory = {};
+                features.forEach(f => {
+                    if (!byCategory[f.category]) byCategory[f.category] = [];
+                    byCategory[f.category].push(f);
+                });
+
+                const container = document.getElementById('featuresContainer');
+                let html = '';
+
+                for (const cat in byCategory) {
+                    html += `<div class="mb-4"><h3 class="text-lg font-bold text-indigo-600 mb-3 border-b border-gray-100 pb-2">${cat}</h3><div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">`;
+
+                    byCategory[cat].forEach(f => {
+                        html += `
+                            <div class="border border-gray-100 rounded-xl p-4 bg-gray-50 hover:shadow-md transition flex flex-col justify-between">
+                                <div>
+                                    <div class="flex justify-between items-start mb-2 gap-2">
+                                        <h4 class="font-bold text-gray-800 text-sm leading-tight">${f.title}</h4>
+                                        <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                                          <input type="checkbox" value="" class="sr-only peer" ${f.enabled ? 'checked' : ''} onchange="toggleFeature('${f.id}', this.checked)">
+                                          <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                                        </label>
+                                    </div>
+                                    <p class="text-xs text-gray-500">${f.description}</p>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    html += `</div></div>`;
+                }
+
+                container.innerHTML = html;
+
+            } catch (e) {
+                console.error("Erro features", e);
+                document.getElementById('featuresContainer').innerHTML = "<p class='text-red-500'>Erro ao carregar módulos da IA.</p>";
+            }
+        }
+
+        async function toggleFeature(id, isChecked) {
+            try {
+                await fetch(`${API_URL}/features/toggle`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', ...getHeaders() },
+                    body: JSON.stringify({ id, enabled: isChecked })
+                });
+
+                const Toast = Swal.mixin({
+                    toast: true,
+                    position: 'bottom-end',
+                    showConfirmButton: false,
+                    timer: 2000,
+                    timerProgressBar: true
+                });
+                Toast.fire({ icon: 'success', title: 'Módulo atualizado!' });
+            } catch (e) {
+                Swal.fire("Erro", "Não foi possível alterar a funcionalidade da IA", "error");
             }
         }
 

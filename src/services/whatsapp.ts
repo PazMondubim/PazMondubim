@@ -664,6 +664,53 @@ Faça perguntas variadas (pode ser sobre personagens bíblicos, versículos famo
                     const { degreesLatitude, degreesLongitude } = msg.message.locationMessage;
                     console.log(`Recebida localização de ${remoteJid}: ${degreesLatitude}, ${degreesLongitude}`);
 
+                    // --- CHECK-IN AUTOMÁTICO DE PRESENÇA NO DOMINGO ---
+                    // Obter data/hora no fuso de São Paulo (GMT-3) de forma confiável
+                    const d = new Date();
+                    const utc = d.getTime() + (d.getTimezoneOffset() * 60000);
+                    const brTime = new Date(utc + (3600000 * -3));
+                    const isSunday = brTime.getDay() === 0;
+                    const hour = brTime.getHours();
+                    const minute = brTime.getMinutes();
+
+                    // Se for Domingo entre 16h e 19h (Pegamos uma margem de segurança de chegada e saída)
+                    if (isSunday && hour >= 16 && hour <= 19) {
+                        // Coordenadas aproximadas do centro de Paraipaba / Igreja (-3.44, -39.14)
+                        const churchLat = -3.4411;
+                        const churchLng = -39.1481;
+
+                        // Cálculo da distância em Km (Fórmula de Haversine)
+                        const R = 6371;
+                        const dLat = (degreesLatitude - churchLat) * (Math.PI / 180);
+                        const dLng = (degreesLongitude - churchLng) * (Math.PI / 180);
+                        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                            Math.cos(churchLat * (Math.PI / 180)) * Math.cos(degreesLatitude * (Math.PI / 180)) *
+                            Math.sin(dLng / 2) * Math.sin(dLng / 2);
+                        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                        const distanceToChurch = R * c;
+
+                        // Se estiver a menos de 5km de distância (Cobrir toda a cidade) ou na igreja, contar presença!
+                        if (distanceToChurch <= 5) {
+                            let phone = remoteJid.replace(/\D/g, '');
+                            const { data: member } = await supabase
+                                .from('members')
+                                .select('id, name')
+                                .or(`phone.eq.${phone},phone.eq.${phone.replace(/^55/, '')},phone.eq.55${phone}`)
+                                .maybeSingle();
+
+                            await supabase.from('attendance').insert([{
+                                phone,
+                                member_name: member?.name || 'Anônimo',
+                                checked_in_at: brTime.toISOString(),
+                                day_of_week: 0
+                            }]);
+
+                            await this.sendMessage(remoteJid, "✅ *Presença Confirmada Automaticamente!* 📍\n\nIdentifiquei que você já está na região da Paz Church para o nosso culto!\n\nQue as bênçãos do Senhor sejam derramadas sobre você hoje! 🙏🔥");
+                            return; // Encerra o fluxo aqui para não buscar célula, pois é hora do culto
+                        }
+                    }
+                    // --- FIM CHECK-IN ---
+
                     // Buscar Lives no Supabase
                     // Correção: Nome da tabela ajustado de 'lifes' para 'lives' conforme erro PGRST205
                     const { data: lives, error } = await supabase.from('lives').select('*');
