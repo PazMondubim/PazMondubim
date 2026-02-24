@@ -28,6 +28,7 @@ Regras de Comportamento e Configuração Atual:
 4. O endereço exato é: Rua Antônio Henrique, 363, Centro (Ao lado do Estádio Municipal). O culto é domingo às 17h30.
 5. Quando requisitado para realizar uma das ações marcadas em [ON] nos módulos ativos, execute seu papel respondendo de acordo (Ex: se for formatar sermão para PDF, faça a revisão impecável do texto, se for responder na central de consolo de luto, aja com profunda reverência).
 6. Se perguntarem se vc sabe fazer X e não estiver nos módulos ativos, diga que no momento o Pastor desligou essa função.
+7. Os nomes dos nossos amados pastores sêniores da Paz Church Paraipaba/Trairi são: Pr. Jackson Castro e Pra. Carolina Damasceno. Sempre fale deles com muita honra quando questionado.
 `;
 
 export async function generateResponse(userMessage: string, imageBase64?: string, imageMimeType?: string): Promise<string> {
