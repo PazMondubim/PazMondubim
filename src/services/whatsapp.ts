@@ -1,4 +1,4 @@
-import { default as makeWASocket, useMultiFileAuthState, DisconnectReason, WASocket, WAMessage, proto, downloadMediaMessage } from '@whiskeysockets/baileys';
+import { default as makeWASocket, useMultiFileAuthState, DisconnectReason, WASocket, WAMessage, proto, downloadMediaMessage, Browsers, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -35,17 +35,19 @@ export class WhatsAppService {
         console.log('🔄 Iniciando conexão com WhatsApp...');
 
         try {
+            const { version, isLatest } = await fetchLatestBaileysVersion();
+            console.log(`📡 Usando versão do WA v${version.join('.')}, isLatest: ${isLatest}`);
             const { state, saveCreds } = await useMultiFileAuthState(this.authStateStr);
             console.log('📂 Estado de autenticação recriado.');
 
             this.sock = makeWASocket({
                 logger: pino({ level: 'silent' }), // Voltei para silent para não poluir
                 auth: state,
+                version, // OBRIGATÓRIO PARA NÃO DAR 405 NA META AGORA
                 // printQRInTerminal: true, // Removido pois está obsoleto e o qrcode-terminal já exibe
                 syncFullHistory: false, // Menos uso de recursos / Menos chance de travar ao sincronizar tudo
                 markOnlineOnConnect: true, // Força status online
                 keepAliveIntervalMs: 30000, // Mantém a conexão websocket ativa por mais tempo
-                browser: ["AgenteChurch", "Chrome", "1.0.0"] // Mascarando para evitar bloqueio
             });
 
             this.sock.ev.on('connection.update', (update: any) => {
