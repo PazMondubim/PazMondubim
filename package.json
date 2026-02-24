@@ -5,11 +5,11 @@
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
-    "edge-tts-node": "^1.5.7",
     "express": "^4.21.2",
     "groq-sdk": "^0.9.1",
     "multer": "^2.0.2",
     "node-cron": "^3.0.3",
+    "node-edge-tts": "^1.2.10",
     "pino": "^9.6.0",
     "qrcode-terminal": "^0.12.0"
   },

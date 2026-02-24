@@ -1,14 +1,13 @@
 /**
- * Serviço de Text-to-Speech (TTS) GRATUITO
- * Usa a API não-oficial do Google Translate TTS.
- * - Sem pacotes extra (usa módulo nativo https do Node.js)
- * - Funciona em servidores cloud (Koyeb, Render, Railway, etc.)
- * - Voz em Português do Brasil (pt-BR)
+ * Serviço de Text-to-Speech (TTS) com Voz Neural Realista
+ * Usa a API do Microsoft Edge TTS (Totalmente Gratuito)
+ * - Voz extremamente humanizada e natural (pt-BR-AntonioNeural)
+ * - Não possui limite de texto para cortes
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as https from 'https';
+import { EdgeTTS } from 'node-edge-tts';
 
 // Pasta temporária para áudios gerados
 const TEMP_DIR = path.join(__dirname, '../../temp_tts');
@@ -19,81 +18,22 @@ if (!fs.existsSync(TEMP_DIR)) {
 }
 
 /**
- * Limpa emojis e formatação WhatsApp do texto antes de sintetizar.
+ * Limpa formatação WhatsApp do texto antes de sintetizar.
  */
 function limparTextoParaTTS(texto: string): string {
     return texto
-        // Remove emojis (range amplo unicode)
-        .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{2300}-\u{23FF}\u{2B00}-\u{2BFF}]/gu, '')
         // Remove asteriscos de bold WhatsApp
         .replace(/\*/g, '')
         // Remove underline de itálico
         .replace(/_/g, ' ')
-        // Quebras de linha viram pausas
-        .replace(/\n+/g, '. ')
+        // Remove cerquilha e outros símbolos que o TTS possa ler literalmente
+        .replace(/#/g, '')
         .trim();
 }
 
 /**
- * Faz download de uma URL HTTPS para um arquivo local.
- */
-function downloadToFile(url: string, destPath: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-        const file = fs.createWriteStream(destPath);
-
-        const req = https.get(url, {
-            headers: {
-                // User-Agent necessário — Google bloqueia sem ele
-                'User-Agent': 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36',
-                'Referer': 'https://translate.google.com/',
-                'Accept': '*/*',
-            },
-            timeout: 10000, // 10 segundos de timeout
-        }, (res) => {
-            // Seguir redirecionamentos (Google às vezes redireciona)
-            if (res.statusCode === 301 || res.statusCode === 302) {
-                const location = res.headers.location;
-                if (location) {
-                    file.close();
-                    downloadToFile(location, destPath).then(resolve).catch(reject);
-                    return;
-                }
-            }
-
-            if (res.statusCode !== 200) {
-                file.close();
-                fs.unlink(destPath, () => { });
-                reject(new Error(`HTTP ${res.statusCode} do Google TTS`));
-                return;
-            }
-
-            res.pipe(file);
-            file.on('finish', () => {
-                file.close();
-                resolve();
-            });
-        });
-
-        req.on('error', (err) => {
-            file.close();
-            fs.unlink(destPath, () => { });
-            reject(err);
-        });
-
-        req.on('timeout', () => {
-            req.destroy();
-            file.close();
-            fs.unlink(destPath, () => { });
-            reject(new Error('Timeout ao conectar ao Google TTS'));
-        });
-    });
-}
-
-/**
- * Converte texto em arquivo de áudio MP3 usando Google Translate TTS (gratuito).
+ * Converte texto em arquivo de áudio MP3 usando Edge TTS.
  * Retorna o caminho do arquivo gerado, ou null em caso de erro.
- *
- * Limite: ~200 caracteres por requisição. Textos maiores são truncados.
  */
 export async function textToSpeech(texto: string): Promise<string | null> {
     const textoLimpo = limparTextoParaTTS(texto);
@@ -102,36 +42,34 @@ export async function textToSpeech(texto: string): Promise<string | null> {
         return null;
     }
 
-    // Google TTS aceita ~200 chars por request. Trunca se necessário.
-    const textoFinal = textoLimpo.length > 200
-        ? textoLimpo.substring(0, 197) + '...'
-        : textoLimpo;
-
     const timestamp = Date.now();
     const mp3Path = path.join(TEMP_DIR, `tts_${timestamp}.mp3`);
 
     try {
-        console.log(`🔊 Gerando áudio TTS Google (${textoFinal.length} chars)...`);
+        console.log(`🔊 Gerando áudio TTS Neural humanizado (${textoLimpo.length} chars)...`);
 
-        const encoded = encodeURIComponent(textoFinal);
-        const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encoded}&tl=pt-BR&client=tw-ob&ttsspeed=0.9`;
+        // Voz Neural Humana do Brasil - Masculino (Pode mudar para pt-BR-FranciscaNeural se quiser feminino)
+        const tts = new EdgeTTS({
+            voice: 'pt-BR-AntonioNeural',
+            lang: 'pt-BR'
+        });
 
-        await downloadToFile(url, mp3Path);
+        await tts.ttsPromise(textoLimpo, mp3Path);
 
-        // Verifica se o arquivo tem conteúdo real (MP3 vazio = falhou silenciosamente)
         if (!fs.existsSync(mp3Path)) {
             throw new Error('Arquivo MP3 não foi criado.');
         }
+
         const { size } = fs.statSync(mp3Path);
         if (size < 200) {
-            throw new Error(`Arquivo muito pequeno (${size} bytes) — possível bloqueio.`);
+            throw new Error(`Arquivo muito pequeno (${size} bytes) — falhou. / Possível bloqueio temporário.`);
         }
 
-        console.log(`✅ Áudio TTS gerado: ${mp3Path} (${size} bytes)`);
+        console.log(`✅ Áudio Neural gerado com sucesso: ${mp3Path} (${size} bytes)`);
         return mp3Path;
 
     } catch (error) {
-        console.error('❌ Erro ao gerar áudio TTS:', error);
+        console.error('❌ Erro ao gerar áudio Neural:', error);
         if (fs.existsSync(mp3Path)) {
             try { fs.unlinkSync(mp3Path); } catch (_) { }
         }
