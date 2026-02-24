@@ -41,10 +41,11 @@ export class WhatsAppService {
             this.sock = makeWASocket({
                 logger: pino({ level: 'silent' }), // Voltei para silent para não poluir
                 auth: state,
-                printQRInTerminal: true, // Voltei para true para garantir que o QR apareça no terminal se o navegador falhar
+                // printQRInTerminal: true, // Removido pois está obsoleto e o qrcode-terminal já exibe
                 syncFullHistory: false, // Menos uso de recursos / Menos chance de travar ao sincronizar tudo
                 markOnlineOnConnect: true, // Força status online
                 keepAliveIntervalMs: 30000, // Mantém a conexão websocket ativa por mais tempo
+                browser: ["AgenteChurch", "Chrome", "1.0.0"] // Mascarando para evitar bloqueio
             });
 
             this.sock.ev.on('connection.update', (update: any) => {
@@ -90,15 +91,15 @@ export class WhatsAppService {
                             this.authStateStr = `auth_session_${Date.now()}`;
                         }
 
-                        console.log('🔄 Reiniciando conexão em 5 segundos...');
-                        setTimeout(() => this.connectToWhatsApp(), 5000);
+                        console.log('🔄 Espere um pouco... Reiniciando conexão em 15 segundos para evitar bloqueio por IP...');
+                        setTimeout(() => this.connectToWhatsApp(), 15000);
 
                     } else if (shouldReconnect) {
                         this.retryCount++;
-                        console.log(`🔄 Tentando reconectar em 5 segundos... (Tentativas: ${this.retryCount})`);
+                        console.log(`🔄 Tentando reconectar em 15 segundos... (Tentativas: ${this.retryCount})`);
                         // Removemos o limite de retries porque sem internet no celular principal, 
                         // a conexão com o servidor do Baileys ainda pode oscilar e ele NÃO deve desligar!
-                        setTimeout(() => this.connectToWhatsApp(), 5000);
+                        setTimeout(() => this.connectToWhatsApp(), 15000);
                     }
                 } else if (connection === 'open') {
                     console.log('✅ Conectado ao WhatsApp com sucesso!');
