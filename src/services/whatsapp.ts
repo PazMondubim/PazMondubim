@@ -644,6 +644,15 @@ Faça perguntas variadas (pode ser sobre personagens bíblicos, versículos famo
                                     if (this.sock) {
                                         try {
                                             const response = await fetch(imgUrl);
+                                            if (!response.ok) {
+                                                throw new Error(`Servidor de imagem retornou erro: ${response.status} ${response.statusText}`);
+                                            }
+
+                                            const contentType = response.headers.get('content-type');
+                                            if (!contentType || !contentType.startsWith('image/')) {
+                                                throw new Error(`Esperado imagem, mas recebeu ${contentType}`);
+                                            }
+
                                             const arrayBuffer = await response.arrayBuffer();
                                             const buffer = Buffer.from(arrayBuffer);
 
@@ -863,6 +872,16 @@ Faça perguntas variadas (pode ser sobre personagens bíblicos, versículos famo
 
         try {
             const response = await fetch(imgUrl);
+
+            if (!response.ok) {
+                throw new Error(`Servidor de imagem retornou erro: ${response.status} ${response.statusText}`);
+            }
+
+            const contentType = response.headers.get('content-type');
+            if (!contentType || !contentType.startsWith('image/')) {
+                throw new Error(`Esperado imagem, mas recebeu ${contentType}`);
+            }
+
             const arrayBuffer = await response.arrayBuffer();
             const buffer = Buffer.from(arrayBuffer);
 
