@@ -7,6 +7,7 @@ import qrcode from 'qrcode-terminal';
 import { supabase } from '../config/supabase';
 import { findNearestLife } from '../utils/location';
 import { textToSpeech, limparAudioTemp } from './tts';
+import PDFDocument from 'pdfkit';
 
 export class WhatsAppService {
     public sock: WASocket | undefined;
@@ -305,7 +306,7 @@ export class WhatsAppService {
                             currentState.data.address = address;
 
                             currentState.step = 'WAITING_BIRTHDATE';
-                            await this.sendMessage(remoteJid, `Entendido! �\n\nAgora: *Qual sua data de nascimento?* (Ex: 25/12/1990) �`);
+                            await this.sendMessage(remoteJid, `Entendido! \n\nAgora: *Qual sua data de nascimento?* (Ex: 25/12/1990) `);
                             return;
                         }
 
@@ -322,7 +323,7 @@ export class WhatsAppService {
                             currentState.data.birth_date = birthDate;
 
                             currentState.step = 'WAITING_LIFE_GROUP';
-                            await this.sendMessage(remoteJid, `Certinho! �\n\nÚltima pergunta: *Você já faz parte de algum Life Group (Célula)?* \nSe sim, qual? (Se não, responda "Não")`);
+                            await this.sendMessage(remoteJid, `Certinho! \n\nÚltima pergunta: *Você já faz parte de algum Life Group (Célula)?* \nSe sim, qual? (Se não, responda "Não")`);
                             return;
                         }
 
@@ -378,11 +379,10 @@ export class WhatsAppService {
 
                     if (!member && !currentState) {
                         const welcomeText =
-                            `Oiiiiii!!! Que alegria ter você aqui na Paz Church Paraipaba e Trairi! 🤍
+                            `Olá! Que alegria ter você aqui na Paz Church Paraipaba e Trairi!
 Somos uma igreja que vive a fé em Jesus, valoriza pessoas e caminha em família.
 
-Desejamos que você se sinta em casa e encontre aqui um ambiente de cuidado, propósito e crescimento espiritual.
-Conte conosco, sempre! 🙏
+Desejamos que você se sinta em casa. Conte conosco!
 
 *Vamos fazer seu cadastro rapidinho para ficarmos conectados?*
 Qual é o seu nome completo?`;
@@ -408,14 +408,14 @@ Qual é o seu nome completo?`;
 
                     // Ponto 1: Menu Inicial Guiado
                     if (lowerText === 'oi' || lowerText === 'olá' || lowerText === 'ola' || lowerText === 'menu' || lowerText === '/ajuda' || lowerText === 'ajuda') {
-                        const menuText = `Olá! Que bom falar com você! 👋\nComo posso te ajudar hoje?\n\n*Responda com o número da opção desejada:*\n\n1️⃣ Horários dos Cultos e Endereço\n2️⃣ Quero doar (Dízimos e Ofertas)\n3️⃣ Onde tem uma Life (Célula)?\n4️⃣ Falar com a Inteligência Artificial (Dúvidas/Aconselhamento)\n5️⃣ Falar com a Liderança / Pastor (Atendimento Humano)\n\n🙏 *Comandos Especiais:*\n!oração [seu pedido] - Enviar pedido de oração\n!presente - Registrar presença no culto\n!quiz - Jogar Quiz Bíblico 📚`;
+                        const menuText = `Olá! Que bom falar com você!\nComo posso te ajudar hoje?\n\n*Responda com o número da opção desejada:*\n\n1️⃣ Horários dos Cultos e Endereço\n2️⃣ Quero doar (Dízimos e Ofertas)\n3️⃣ Onde tem uma Life (Célula)?\n4️⃣ Falar com a Inteligência Artificial (Dúvidas/Aconselhamento)\n5️⃣ Falar com a Liderança / Pastor (Atendimento Humano)\n\n*Comandos Especiais:*\n!oração [seu pedido] - Enviar pedido de oração\n!presente - Registrar presença no culto\n!quiz - Jogar Quiz Bíblico`;
                         await this.sendMessage(remoteJid, menuText);
                         return;
                     }
 
                     // Respostas Automáticas do Menu
                     if (lowerText === '1') {
-                        await this.sendMessage(remoteJid, `📍 *Paz Church Paraipaba*\nRua Antônio Henrique, 363, Centro (Ao lado do Estádio Municipal)\n\n⏰ *Nossos Horários:*\nDomingo às 17h30\n\nEsperamos por você e sua família! �`);
+                        await this.sendMessage(remoteJid, `📍 *Paz Church Paraipaba*\nRua Antônio Henrique, 363, Centro (Ao lado do Estádio Municipal)\n\n⏰ *Nossos Horários:*\nDomingo às 17h30\n\nEsperamos por você e sua família!`);
                         return;
                     }
 
@@ -628,11 +628,66 @@ Faça perguntas variadas (pode ser sobre personagens bíblicos, versículos famo
                                 await this.sock.sendPresenceUpdate(presenceType, remoteJid);
                             }
 
-                            const aiResponse = await generateResponse(textoParaIA, imageBase64, imageMimeType);
+                            let aiResponse = await generateResponse(textoParaIA, imageBase64, imageMimeType);
 
-                            if (!aiResponse) {
+                            let sentMedia = false;
+
+                            if (aiResponse) {
+                                // 1. Verifica se deve gerar imagem
+                                const matchImage = aiResponse.match(/\[GERAR_IMAGEM:\s*(.*?)\]/is);
+                                if (matchImage) {
+                                    const promptImg = matchImage[1].trim();
+                                    aiResponse = aiResponse.replace(matchImage[0], '').trim();
+
+                                    const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(promptImg)}?width=1024&height=1024&nologo=true`;
+                                    // Send the image with the rest of the text as caption
+                                    if (this.sock) {
+                                        await this.sock.sendMessage(remoteJid, {
+                                            image: { url: imgUrl },
+                                            caption: aiResponse.length > 0 ? aiResponse : '✨ Imagem gerada com sucesso!'
+                                        });
+                                        sentMedia = true;
+                                    }
+                                }
+
+                                // 2. Verifica se deve gerar PDF
+                                const matchPdf = aiResponse.match(/\[GERAR_PDF:\s*(.*?)\s*\|\s*(.*?)\]/is);
+                                if (matchPdf && !sentMedia) {
+                                    const titlePdf = matchPdf[1].trim();
+                                    const contentPdf = matchPdf[2].trim();
+                                    aiResponse = aiResponse.replace(matchPdf[0], '').trim();
+
+                                    // Create PDF
+                                    const pdfPath = path.join(__dirname, `../../${Date.now()}.pdf`);
+                                    const doc = new PDFDocument();
+                                    doc.pipe(fs.createWriteStream(pdfPath));
+                                    doc.fontSize(20).text(titlePdf, { align: 'center' });
+                                    doc.moveDown();
+                                    doc.fontSize(12).text(contentPdf);
+                                    doc.end();
+
+                                    // Wait for it to finish writing
+                                    await new Promise((resolve) => setTimeout(resolve, 1500));
+
+                                    if (this.sock) {
+                                        let textToSend = aiResponse.length > 0 ? aiResponse : `📄 *${titlePdf}* gerado com sucesso!`;
+                                        await this.sock.sendMessage(remoteJid, { text: textToSend });
+                                        await this.sock.sendMessage(remoteJid, {
+                                            document: fs.readFileSync(pdfPath),
+                                            fileName: `${titlePdf}.pdf`,
+                                            mimetype: 'application/pdf'
+                                        });
+                                        sentMedia = true;
+                                    }
+
+                                    // Clean up
+                                    try { fs.unlinkSync(pdfPath); } catch (e) { }
+                                }
+                            }
+
+                            if (!aiResponse && !sentMedia) {
                                 console.warn("IA retornou resposta vazia.");
-                            } else if (isAudioMessage || forcarAudio) {
+                            } else if ((isAudioMessage || forcarAudio) && !sentMedia && aiResponse) {
                                 // 🔊 RESPONDER COM ÁUDIO (quando recebeu áudio OU quando usou !audio)
                                 console.log('🔊 Gerando resposta em áudio...');
                                 const audioFilePath = await textToSpeech(aiResponse);
@@ -645,7 +700,7 @@ Faça perguntas variadas (pode ser sobre personagens bíblicos, versículos famo
                                     console.warn('⚠️ TTS falhou, enviando como texto.');
                                     await this.sendMessage(remoteJid, aiResponse);
                                 }
-                            } else {
+                            } else if (!sentMedia && aiResponse) {
                                 // Resposta normal em texto
                                 await this.sendMessage(remoteJid, aiResponse);
                             }
@@ -775,6 +830,38 @@ Faça perguntas variadas (pode ser sobre personagens bíblicos, versículos famo
             // Se falhou com @lid, tenta @s.whatsapp.net como fallback (e vice-versa é perigoso, melhor não)
         }
     }
+
+    async sendImageMessageUrl(to: string, imgUrl: string, caption?: string) {
+        if (!this.sock) {
+            console.warn('⚠️ WhatsApp não conectado ao tentar enviar imagem.');
+            return;
+        }
+
+        const delay = Math.floor(Math.random() * 3000) + 2000;
+        await new Promise(resolve => setTimeout(resolve, delay));
+
+        if (!to) return;
+
+        let jid = to;
+        if (!jid.includes('@')) {
+            if (jid.length >= 14) {
+                jid = `${jid}@lid`;
+            } else {
+                jid = `${jid}@s.whatsapp.net`;
+            }
+        }
+
+        try {
+            await this.sock.sendMessage(jid, {
+                image: { url: imgUrl },
+                caption: caption || ''
+            });
+            console.log(`✅ Imagem enviada para ${jid}`);
+        } catch (error) {
+            console.error(`❌ Erro ao enviar imagem para ${jid}:`, error);
+        }
+    }
+
 
     /**
      * Envia uma mensagem de áudio/voz (nota de voz PTT) pelo WhatsApp.

@@ -24,6 +24,9 @@ function limparTextoParaTTS(texto: string): string {
     return texto
         // Remove emojis (usando regex amplo para não poluir o áudio)
         .replace(/[\u{1F000}-\u{1F6FF}\u{1F900}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
+        // Corrige pronúncia de Pastor(a)
+        .replace(/\bPr\b|\bPr\./g, 'Pastor')
+        .replace(/\bPra\b|\bPra\./g, 'Pastora')
         // Remove asteriscos de bold WhatsApp
         .replace(/\*/g, '')
         // Remove underline de itálico

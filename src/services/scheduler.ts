@@ -59,11 +59,19 @@ export function initScheduler() {
             }
         }
 
-        // 2. Mandar no Grupo (AGRUPADO - Melhoria 11)
+        // 2. Mandar no Grupo uma Imagem Real Personalizada
         if (CHURCH_GROUP_ID) {
-            const names = birthdays.map((m: any) => `• ${m.name}`).join('\n');
-            const groupMsg = `🎉 *ANIVERSARIANTES DO DIA* 🎉\n\nHoje é dia de festa! Vamos parabenizar:\n\n${names}\n\nDeixem seus parabéns aqui! 👏👏🎈`;
-            await waService.sendMessage(CHURCH_GROUP_ID, groupMsg);
+            for (const member of birthdays) {
+                // Montar o texto do post
+                const groupMsg = `🎉 *HOJE É DIA DE FESTA!* 🎉\n\nVamos celebrar a maravilhosa vida do(a) nosso(a) amado(a) *${member.name}*! 🎂🎈\n\nDesejamos que o Senhor derrame chuvas de bênçãos sobre a sua vida, lhe concedendo paz, saúde, alegria e muitos anos de vida na presença dEle!\n\n*"O Senhor te abençoe e te guarde; o Senhor faça resplandecer o seu rosto sobre ti e te conceda paz."* (Números 6:24-26)\n\nDeixem seus parabéns aqui! 👏👏🎈`;
+
+                // Montar url da imagem (usando prompt em inglês customizado)
+                const promptImg = `A beautiful 3D birthday celebration card, Christian theme, bright and joyful, luxurious balloons and cake, elegant typography with the text "Feliz Aniversário ${member.name}", high quality, 8k`;
+                const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(promptImg)}?width=1024&height=1024&nologo=true`;
+
+                // Enviar a imagem com a legenda (via método do whatsapp.ts)
+                await waService.sendImageMessageUrl(CHURCH_GROUP_ID, imgUrl, groupMsg);
+            }
         }
     }, { timezone: "America/Sao_Paulo" });
 

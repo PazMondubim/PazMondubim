@@ -2,6 +2,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
     "@types/multer": "^2.0.0",
+    "@types/pdfkit": "^0.17.5",
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
@@ -10,6 +11,7 @@
     "multer": "^2.0.2",
     "node-cron": "^3.0.3",
     "node-edge-tts": "^1.2.10",
+    "pdfkit": "^0.17.2",
     "pino": "^9.6.0",
     "qrcode-terminal": "^0.12.0"
   },
