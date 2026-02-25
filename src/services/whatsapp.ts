@@ -642,11 +642,21 @@ Faça perguntas variadas (pode ser sobre personagens bíblicos, versículos famo
                                     const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(promptImg)}?width=1024&height=1024&nologo=true`;
                                     // Send the image with the rest of the text as caption
                                     if (this.sock) {
-                                        await this.sock.sendMessage(remoteJid, {
-                                            image: { url: imgUrl },
-                                            caption: aiResponse.length > 0 ? aiResponse : '✨ Imagem gerada com sucesso!'
-                                        });
-                                        sentMedia = true;
+                                        try {
+                                            const response = await fetch(imgUrl);
+                                            const arrayBuffer = await response.arrayBuffer();
+                                            const buffer = Buffer.from(arrayBuffer);
+
+                                            await this.sock.sendMessage(remoteJid, {
+                                                image: buffer,
+                                                caption: aiResponse.length > 0 ? aiResponse : '✨ Imagem gerada com sucesso!'
+                                            });
+                                            sentMedia = true;
+                                        } catch (e) {
+                                            console.error('Erro ao baixar ou enviar imagem gerada:', e);
+                                            // Fallback
+                                            await this.sock.sendMessage(remoteJid, { text: aiResponse.length > 0 ? aiResponse : '✨ Imagem gerada com sucesso!' });
+                                        }
                                     }
                                 }
 
@@ -852,13 +862,17 @@ Faça perguntas variadas (pode ser sobre personagens bíblicos, versículos famo
         }
 
         try {
+            const response = await fetch(imgUrl);
+            const arrayBuffer = await response.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer);
+
             await this.sock.sendMessage(jid, {
-                image: { url: imgUrl },
+                image: buffer,
                 caption: caption || ''
             });
             console.log(`✅ Imagem enviada para ${jid}`);
         } catch (error) {
-            console.error(`❌ Erro ao enviar imagem para ${jid}:`, error);
+            console.error(`❌ Erro ao baixar ou enviar imagem para ${jid}:`, error);
         }
     }
 
