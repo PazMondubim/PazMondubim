@@ -639,11 +639,19 @@ Faça perguntas variadas (pode ser sobre personagens bíblicos, versículos famo
                                     const promptImg = matchImage[1].trim();
                                     aiResponse = aiResponse.replace(matchImage[0], '').trim();
 
-                                    const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(promptImg)}?width=1024&height=1024&nologo=true`;
                                     // Send the image with the rest of the text as caption
                                     if (this.sock) {
                                         try {
-                                            const response = await fetch(imgUrl);
+                                            const bodyOptions = JSON.stringify({ inputs: promptImg });
+                                            const response = await fetch('https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell', {
+                                                method: 'POST',
+                                                headers: {
+                                                    'Authorization': `Bearer ${process.env.HF_API_KEY}`,
+                                                    'Content-Type': 'application/json'
+                                                },
+                                                body: bodyOptions
+                                            });
+
                                             if (!response.ok) {
                                                 throw new Error(`Servidor de imagem retornou erro: ${response.status} ${response.statusText}`);
                                             }
@@ -664,7 +672,7 @@ Faça perguntas variadas (pode ser sobre personagens bíblicos, versículos famo
                                         } catch (e) {
                                             console.error('Erro ao baixar ou enviar imagem gerada:', e);
                                             // Fallback
-                                            await this.sock.sendMessage(remoteJid, { text: aiResponse.length > 0 ? aiResponse : '✨ Imagem gerada com sucesso!' });
+                                            await this.sock.sendMessage(remoteJid, { text: aiResponse.length > 0 ? aiResponse : '✨ Imagem gerada com sucesso! (Tivemos problema com o renderizador visual)' });
                                         }
                                     }
                                 }
@@ -850,7 +858,7 @@ Faça perguntas variadas (pode ser sobre personagens bíblicos, versículos famo
         }
     }
 
-    async sendImageMessageUrl(to: string, imgUrl: string, caption?: string) {
+    async sendGeneratedImageMessage(to: string, promptImg: string, caption?: string) {
         if (!this.sock) {
             console.warn('⚠️ WhatsApp não conectado ao tentar enviar imagem.');
             return;
@@ -871,7 +879,15 @@ Faça perguntas variadas (pode ser sobre personagens bíblicos, versículos famo
         }
 
         try {
-            const response = await fetch(imgUrl);
+            const bodyOptions = JSON.stringify({ inputs: promptImg });
+            const response = await fetch('https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${process.env.HF_API_KEY}`,
+                    'Content-Type': 'application/json'
+                },
+                body: bodyOptions
+            });
 
             if (!response.ok) {
                 throw new Error(`Servidor de imagem retornou erro: ${response.status} ${response.statusText}`);

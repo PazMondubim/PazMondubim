@@ -67,10 +67,9 @@ export function initScheduler() {
 
                 // Montar url da imagem (usando prompt em inglês customizado)
                 const promptImg = `A beautiful 3D birthday celebration card, Christian theme, bright and joyful, luxurious balloons and cake, elegant typography with the text "Feliz Aniversário ${member.name}", high quality, 8k`;
-                const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(promptImg)}?width=1024&height=1024&nologo=true`;
 
                 // Enviar a imagem com a legenda (via método do whatsapp.ts)
-                await waService.sendImageMessageUrl(CHURCH_GROUP_ID, imgUrl, groupMsg);
+                await waService.sendGeneratedImageMessage(CHURCH_GROUP_ID, promptImg, groupMsg);
             }
         }
     }, { timezone: "America/Sao_Paulo" });
