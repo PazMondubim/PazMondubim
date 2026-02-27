@@ -481,7 +481,7 @@ Qual é o seu nome completo?`;
 
                     // Respostas Automáticas do Menu
                     if (lowerText === '1') {
-                        await this.sendMessage(remoteJid, `📍 *Paz Church Mondubim*\nBairro Mondubim, Fortaleza - CE\n\n⏰ *Nossos Horários:*\nDomingo às 17h30\n\nSiga-nos nas redes sociais: @pazchurchmondubim\n\nEsperamos por você e sua família! 🙏`);
+                        await this.sendMessage(remoteJid, `📍 *Paz Church Mondubim*\nBairro Mondubim, Fortaleza - CE\n\n⏰ *Nossa Programação Semanal:*\n\n📖 *Terça-feira* — TADEL (Treinamento Avançado de Líderes) às 19h30\n🔥 *Sexta-feira* — Culto às 19h30\n⛪ *Domingo* — Culto às 09h30 e às 17h30\n\nSiga-nos: @pazchurchmondubim\nEsperamos por você e sua família! 🙏`);
                         return;
                     }
 
@@ -571,9 +571,15 @@ Qual é o seu nome completo?`;
                         let resposta = '';
                         if (diaSemana === 0) {
                             // É domingo
-                            resposta = `✅ *Presença registrada!*\n\nQue ótimo ter você aqui hoje, *${member?.name || 'irmão(a)'}*! 🔥\nQue o culto de hoje seja cheio da presença de Deus! 🙏👏`;
+                            resposta = `✅ *Presença registrada!*\n\nQue ótimo ter você aqui hoje, *${member?.name || 'irmão(a)'}*! 🔥\nQue este culto seja cheio da presença de Deus! 🙏👏`;
+                        } else if (diaSemana === 2) {
+                            // Terça-feira — TADEL
+                            resposta = `✅ *Presença registrada!*\n\nSeja bem-vindo(a) ao *TADEL* desta semana, *${member?.name || 'líder'}*! 📖🔥\nQue Deus te capacite cada vez mais para liderar!`;
+                        } else if (diaSemana === 5) {
+                            // Sexta-feira — Culto
+                            resposta = `✅ *Presença registrada!*\n\nQue bom ter você no culto de hoje, *${member?.name || 'irmão(a)'}*! 🙏🔥\nQue a presença de Deus te transforme!`;
                         } else {
-                            resposta = `✅ *Presença registrada!*\n\nVocê registrou presença hoje. Que bom!\n\nLembre-se: o próximo culto é no *Domingo às 17h30* na Paz Church Mondubim. \nEsperamos você! 📸🙏`;
+                            resposta = `✅ *Presença registrada!*\n\nObrigado por registrar! 🙏\n\n📅 *Próximos encontros:*\nTerça - TADEL às 19h30\nSexta - Culto às 19h30\nDomingo - Culto às 09h30 e 17h30\n\nPaz Church Mondubim te espera! ⛪`;
                         }
 
                         await this.sendMessage(remoteJid, resposta);
@@ -820,12 +826,27 @@ Faça perguntas variadas (pode ser sobre personagens bíblicos, versículos famo
                     const d = new Date();
                     const utc = d.getTime() + (d.getTimezoneOffset() * 60000);
                     const brTime = new Date(utc + (3600000 * -3));
-                    const isSunday = brTime.getDay() === 0;
                     const hour = brTime.getHours();
                     const minute = brTime.getMinutes();
 
-                    // Se for Domingo entre 15h30 e 20h (horário de culto Mondubim)
-                    if (isSunday && hour >= 15 && hour <= 20) {
+                    // Check-in GPS automático nos dias/horários de culto:
+                    // Domingo: 08h30-11h00 (culto manhã) e 16h30-20h00 (culto tarde)
+                    // Sexta: 18h30-22h00 (culto)
+                    // Terça: 18h30-22h00 (TADEL)
+                    const isSunday = brTime.getDay() === 0;
+                    const isFriday = brTime.getDay() === 5;
+                    const isTuesday = brTime.getDay() === 2;
+                    const isServiceTime =
+                        (isSunday && ((hour >= 8 && hour < 11) || (hour >= 16 && hour < 20))) ||
+                        (isFriday && hour >= 18 && hour < 22) ||
+                        (isTuesday && hour >= 18 && hour < 22);
+
+                    let eventName = 'Culto Dominical';
+                    if (isTuesday) eventName = 'TADEL';
+                    else if (isFriday) eventName = 'Culto de Sexta';
+                    else if (isSunday && hour < 12) eventName = 'Culto da Manhã';
+
+                    if (isServiceTime) {
                         // Coordenadas do bairro Mondubim, Fortaleza-CE
                         const churchLat = -3.8041;
                         const churchLng = -38.5874;
