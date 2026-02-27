@@ -68,7 +68,7 @@ app.get('/api/members', async (req: Request, res: Response) => {
     const search = req.query.search as string;
 
     let query = supabase
-        .from('members')
+        .from('members_mondubim')
         .select('*', { count: 'exact' });
 
     if (search) {
