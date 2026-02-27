@@ -102,7 +102,27 @@ export function initScheduler() {
     // Tarefa 4: Lembrete de Culto (Domingo às 09:00)
     cron.schedule('0 9 * * 0', async () => {
         if (!CHURCH_GROUP_ID) return;
-        const msg = `🚨 *Lembrete de Culto!* 🚨\n\nHoje é dia de Casa do Pai! 🔥\nNão perca, traga sua família e convide um amigo.\n\n📍 Paz Church Mondubim\nBairro Mondubim, Fortaleza - CE\n⏰ Horário do culto: 17h30\n\nEsperamos você! 🖼️🙏`;
+        const msg = `🚨 *Lembrete de Culto!* 🚨\n\nHoje é dia de Casa do Pai! 🔥\nNão perca, traga sua família e convide um amigo.\n\n📍 Paz Church Mondubim\nBairro Mondubim, Fortaleza - CE\n⏰ Horário do culto: 17h30\n\nEsperamos você! 🙏`;
         await waService.sendMessage(CHURCH_GROUP_ID, msg);
     }, { timezone: "America/Sao_Paulo" });
+
+    // ---------------------------------------------------------------
+    // KEEP-ALIVE: pinga o próprio servidor a cada 10 minutos
+    // Impede hibernação no Render free tier (dorme após 15 min idle)
+    // Configure SELF_URL=https://seu-app.onrender.com no .env / painel
+    // ---------------------------------------------------------------
+    const SELF_URL = process.env.SELF_URL;
+    if (SELF_URL) {
+        console.log(`💓 Keep-alive ativado → pingando ${SELF_URL} a cada 10 min`);
+        cron.schedule('*/10 * * * *', async () => {
+            try {
+                const res = await fetch(`${SELF_URL.replace(/\/$/, '')}/`);
+                console.log(`💓 Keep-alive OK (status ${res.status})`);
+            } catch (e: any) {
+                console.warn(`💔 Keep-alive falhou: ${e.message}`);
+            }
+        });
+    } else {
+        console.log('ℹ️ SELF_URL não configurado — keep-alive desativado');
+    }
 }
