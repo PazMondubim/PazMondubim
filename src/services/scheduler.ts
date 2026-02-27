@@ -18,7 +18,7 @@ export function initScheduler() {
         const day = today.getDate();
         const month = today.getMonth() + 1; // JS months are 0-indexed
 
-        const { data: members, error } = await supabase.from('members').select('*');
+        const { data: members, error } = await supabase.from('members_mondubim').select('*');
 
         if (error || !members) {
             console.error('Erro ao buscar membros para aniversário:', error);
@@ -43,7 +43,7 @@ export function initScheduler() {
         // 1. Mandar DM privada para CADA UM
         for (const member of birthdays) {
             if (member.phone) {
-                const msg = `Olá *${member.name}*, a paz! 🕊️\n\nFeliz aniversário! 🎉🎂\nQue Deus continue te abençoando ricamente neste novo ciclo. Nós da Paz Church amamos você! ❤️`;
+                const msg = `Olá *${member.name}*, a paz! 🕊️\n\nEm nome de toda a família Paz Church Mondubim, desejamos um Feliz Aniversário! 🎉🎂\nQue Deus continue te abençoando ricamente neste novo ciclo. Amamos você! ❤️`;
 
                 // Lógica de JID inteligente (igual ao whatsapp.ts)
                 let jid = member.phone;
@@ -102,7 +102,7 @@ export function initScheduler() {
     // Tarefa 4: Lembrete de Culto (Domingo às 09:00)
     cron.schedule('0 9 * * 0', async () => {
         if (!CHURCH_GROUP_ID) return;
-        const msg = `🚨 *Lembrete de Culto!* 🚨\n\nHojé é dia de Casa do Pai! 🔥\nNão perca, traga sua família e convide um amigo.\n\n📍 Paz Church Paraipaba\nRua Antônio Henrique, 363, Centro (Ao lado do Estádio Municipal)\n⏰ Horário do culto: 17:30\n\nEsperamos você! 💒`;
+        const msg = `🚨 *Lembrete de Culto!* 🚨\n\nHoje é dia de Casa do Pai! 🔥\nNão perca, traga sua família e convide um amigo.\n\n📍 Paz Church Mondubim\nBairro Mondubim, Fortaleza - CE\n⏰ Horário do culto: 17h30\n\nEsperamos você! 🖼️🙏`;
         await waService.sendMessage(CHURCH_GROUP_ID, msg);
     }, { timezone: "America/Sao_Paulo" });
 }

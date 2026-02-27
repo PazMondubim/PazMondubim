@@ -14,14 +14,18 @@ export class WhatsAppService {
     // Alterado para evitar conflito com a pasta antiga que pode estar corrompida/travada
     private authStateStr = 'auth_session_v2';
     private retryCount = 0;
-    private MAX_RETRIES = 5;
+    private MAX_RETRIES = 999; // Reconectar infinitamente
+    private reconnectTimer: NodeJS.Timeout | null = null;
+    private heartbeatTimer: NodeJS.Timeout | null = null;
+    private watchdogTimer: NodeJS.Timeout | null = null;
+    private lastMessageAt: number = Date.now();
+    private isReconnecting: boolean = false;
 
     public qrCodeString: string | null = null;
     public isConnected: boolean = false;
     private LEADER_PHONE = process.env.LEADER_PHONE; // Melhoria 12
 
     // Controle de estado para cadastro completo
-    // Estados: WAITING_NAME -> WAITING_PHONE -> WAITING_BIRTHDATE -> WAITING_NEIGHBORHOOD -> WAITING_LIFE_GROUP -> null
     private registrationStates: {
         [key: string]: {
             step: 'WAITING_NAME' | 'WAITING_PHONE' | 'WAITING_EMAIL' | 'WAITING_CEP' | 'WAITING_ADDRESS' | 'WAITING_BIRTHDATE' | 'WAITING_LIFE_GROUP',
@@ -30,6 +34,45 @@ export class WhatsAppService {
     } = {};
 
     constructor() {
+        // Watchdog: verifica a cada 3 minutos se ainda está conectado
+        this.watchdogTimer = setInterval(() => {
+            if (!this.isConnected && !this.isReconnecting) {
+                console.warn('🐕 WATCHDOG: Bot desconectado e sem reconexão em andamento. Forçando reconexão...');
+                this.scheduleReconnect(0);
+            } else if (this.isConnected) {
+                // Testar se o socket ainda está ativo tentando enviar um ping (keepalive)
+                const idleMs = Date.now() - this.lastMessageAt;
+                if (idleMs > 10 * 60 * 1000) { // 10 minutos sem atividade
+                    console.log(`💓 HEARTBEAT: ${Math.round(idleMs / 60000)} min sem mensagem. Verificando conexão...`);
+                    try {
+                        this.sock?.sendPresenceUpdate('available', 'status@broadcast').catch(() => {
+                            console.warn('💔 HEARTBEAT falhou - conexão morta. Reconectando...');
+                            this.isConnected = false;
+                            this.scheduleReconnect(5000);
+                        });
+                    } catch (e) {
+                        console.warn('💔 HEARTBEAT exception - reconectando...');
+                        this.isConnected = false;
+                        this.scheduleReconnect(5000);
+                    }
+                }
+            }
+        }, 3 * 60 * 1000); // a cada 3 minutos
+    }
+
+    private scheduleReconnect(delayMs: number) {
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
+        // Backoff exponencial: quanto mais tentativas, maior o delay (máx 5 min)
+        const backoffMs = Math.min(delayMs + (this.retryCount * 5000), 5 * 60 * 1000);
+        console.log(`⏳ Reconectando em ${Math.round(backoffMs / 1000)}s... (tentativa ${this.retryCount + 1})`);
+        this.isReconnecting = true;
+        this.reconnectTimer = setTimeout(() => {
+            this.isReconnecting = false;
+            this.connectToWhatsApp();
+        }, backoffMs);
     }
 
     async connectToWhatsApp() {
@@ -41,19 +84,29 @@ export class WhatsAppService {
             const { state, saveCreds } = await useMultiFileAuthState(this.authStateStr);
             console.log('📂 Estado de autenticação recriado.');
 
+            // Fecha socket anterior se existir
+            if (this.sock) {
+                try { this.sock.end(undefined); } catch (e) { }
+                this.sock = undefined;
+            }
+
             this.sock = makeWASocket({
-                logger: pino({ level: 'silent' }), // Voltei para silent para não poluir
+                logger: pino({ level: 'silent' }),
                 auth: state,
-                version, // OBRIGATÓRIO PARA NÃO DAR 405 NA META AGORA
-                // printQRInTerminal: true, // Removido pois está obsoleto e o qrcode-terminal já exibe
-                syncFullHistory: false, // Menos uso de recursos / Menos chance de travar ao sincronizar tudo
-                markOnlineOnConnect: true, // Força status online
-                keepAliveIntervalMs: 30000, // Mantém a conexão websocket ativa por mais tempo
+                version,
+                syncFullHistory: false,
+                markOnlineOnConnect: true,
+                keepAliveIntervalMs: 25000, // Ping a cada 25s para manter conexão viva
+                retryRequestDelayMs: 500,
+                connectTimeoutMs: 60000, // 60s de timeout
+                defaultQueryTimeoutMs: 60000,
+                emitOwnEvents: false,
             });
 
             this.sock.ev.on('connection.update', (update: any) => {
                 const { connection, lastDisconnect, qr } = update;
                 console.log(`📡 Atualização de Conexão: ${connection || 'Indefinido'} | QR: ${qr ? 'SIM' : 'NÃO'}`);
+                this.lastMessageAt = Date.now(); // Atualiza atividade
 
                 if (qr) {
                     this.qrCodeString = qr;
@@ -61,54 +114,67 @@ export class WhatsAppService {
                     console.log('\n==================================================================');
                     console.log('📌 QR CODE GERADO! (Se não aparecer, acesse /qr no navegador)');
                     console.log('==================================================================\n');
-
-                    // Gera QR Code pequeno no terminal (melhor para logs)
                     qrcode.generate(qr, { small: true });
                 }
 
                 if (connection === 'close') {
+                    this.isConnected = false;
                     const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
-                    // Correção 9: Tratamento específico para conexão substituída
+                    const reason = (lastDisconnect?.error as Error)?.message || 'Desconhecido';
+                    console.log(`❌ Conexão fechada. Status Code: ${statusCode} | Motivo: ${reason}`);
+
+                    // Conexão substituída por outra sessão - NÃO reconectar para evitar conflito
                     if (statusCode === DisconnectReason.connectionReplaced) {
-                        console.error('❌ Conexão substituída por outra sessão aberta. Não tentarei reconectar automaticamente para evitar conflito.');
+                        console.error('❌ Conexão substituída por outra sessão aberta. Encerrando para evitar conflito.');
                         this.sock?.end(undefined);
                         return;
                     }
 
-                    const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-                    console.log(`❌ Conexão fechada. Status Code: ${statusCode} | Motivo: ${(lastDisconnect?.error as Error)?.message}`);
-
-                    // Correção 1: Evitar loop infinito com limite de tentativas
-                    if (statusCode === 405 || statusCode === 401) {
-                        console.log('⚠️ Erro crítico de autenticação (405/401).');
-                        // Forçar limpeza imediata
+                    // Deslogado manualmente - não reconectar automaticamente
+                    if (statusCode === DisconnectReason.loggedOut) {
+                        console.error('🔴 Deslogado do WhatsApp. Escaneie o QR Code novamente.');
+                        this.qrCodeString = null;
+                        // Limpar sessão e reconectar para gerar novo QR
                         const authPath = path.resolve(this.authStateStr);
                         try {
                             if (fs.existsSync(authPath)) {
-                                console.log('🧹 Limpando sessão corrompida...');
+                                fs.rmSync(authPath, { recursive: true, force: true });
+                                console.log('🧹 Sessão limpa. Aguardando novo QR Code...');
+                            }
+                        } catch (e) {
+                            this.authStateStr = `auth_session_${Date.now()}`;
+                        }
+                        this.retryCount = 0;
+                        this.scheduleReconnect(3000);
+                        return;
+                    }
+
+                    // Erro crítico 405/401 - limpar sessão e reconectar
+                    if (statusCode === 405 || statusCode === 401) {
+                        console.log('⚠️ Erro crítico de autenticação (405/401). Limpando sessão...');
+                        const authPath = path.resolve(this.authStateStr);
+                        try {
+                            if (fs.existsSync(authPath)) {
                                 fs.rmSync(authPath, { recursive: true, force: true });
                             }
                         } catch (e) {
-                            console.error('Erro ao limpar pasta (pode estar em uso):', e);
-                            // Se não der pra apagar, tenta mudar o nome dinamicamente na próxima (fallback)
                             this.authStateStr = `auth_session_${Date.now()}`;
                         }
-
-                        console.log('🔄 Espere um pouco... Reiniciando conexão em 15 segundos para evitar bloqueio por IP...');
-                        setTimeout(() => this.connectToWhatsApp(), 15000);
-
-                    } else if (shouldReconnect) {
                         this.retryCount++;
-                        console.log(`🔄 Tentando reconectar em 15 segundos... (Tentativas: ${this.retryCount})`);
-                        // Removemos o limite de retries porque sem internet no celular principal, 
-                        // a conexão com o servidor do Baileys ainda pode oscilar e ele NÃO deve desligar!
-                        setTimeout(() => this.connectToWhatsApp(), 15000);
+                        this.scheduleReconnect(20000); // 20s no erro crítico
+                        return;
                     }
+
+                    // Qualquer outro motivo: reconectar com backoff exponencial (SEMPRE)
+                    this.retryCount++;
+                    this.scheduleReconnect(10000);
+
                 } else if (connection === 'open') {
-                    console.log('✅ Conectado ao WhatsApp com sucesso!');
+                    console.log('✅ Conectado ao WhatsApp com sucesso! (Paz Church Mondubim)');
                     this.qrCodeString = null;
                     this.isConnected = true;
-                    this.retryCount = 0; // Resetar contador ao conectar sucesso
+                    this.retryCount = 0; // Resetar contador ao conectar com sucesso
+                    this.lastMessageAt = Date.now();
                 }
             });
 
@@ -333,7 +399,7 @@ export class WhatsAppService {
                             currentState.data.life_group = lifeGroupAnswer;
 
                             // Salva TUDO no Supabase
-                            const { error } = await supabase.from('members').insert([{
+                            const { error } = await supabase.from('members_mondubim').insert([{
                                 name: currentState.data.name,
                                 phone: phone, // WhatsApp ID
                                 phone_contact: currentState.data.phone_contact,
@@ -372,15 +438,15 @@ export class WhatsAppService {
                     // 2. Se não está em cadastro, checa se é membro novo
                     // Tenta encontrar pelo telefone exato ou variações (com/sem 55)
                     const { data: member } = await supabase
-                        .from('members')
+                        .from('members_mondubim')
                         .select('id, name')
                         .or(`phone.eq.${phone},phone.eq.${phone.replace(/^55/, '')},phone.eq.55${phone}`)
                         .maybeSingle(); // Usa maybeSingle para não estourar erro se tiver duplicado ou nada
 
                     if (!member && !currentState) {
                         const welcomeText =
-                            `Olá! Que alegria ter você aqui na Paz Church Paraipaba e Trairi!
-Somos uma igreja que vive a fé em Jesus, valoriza pessoas e caminha em família.
+                            `Olá! Que alegria ter você aqui na Paz Church Mondubim! 🕊️
+Somos uma família que vive a fé em Jesus, valoriza pessoas e caminha em comunidade.
 
 Desejamos que você se sinta em casa. Conte conosco!
 
@@ -400,7 +466,7 @@ Qual é o seu nome completo?`;
 
                     // Prioridade 1: Comandos Específicos
                     if (lowerText === '/reset') {
-                        await supabase.from('members').delete().eq('phone', phone);
+                        await supabase.from('members_mondubim').delete().eq('phone', phone);
                         delete this.registrationStates[remoteJid];
                         await this.sendMessage(remoteJid, "Seu cadastro foi reiniciado! Mande um 'Oi' para começar de novo. 🔄");
                         return;
@@ -415,13 +481,13 @@ Qual é o seu nome completo?`;
 
                     // Respostas Automáticas do Menu
                     if (lowerText === '1') {
-                        await this.sendMessage(remoteJid, `📍 *Paz Church Paraipaba*\nRua Antônio Henrique, 363, Centro (Ao lado do Estádio Municipal)\n\n⏰ *Nossos Horários:*\nDomingo às 17h30\n\nEsperamos por você e sua família!`);
+                        await this.sendMessage(remoteJid, `📍 *Paz Church Mondubim*\nBairro Mondubim, Fortaleza - CE\n\n⏰ *Nossos Horários:*\nDomingo às 17h30\n\nSiga-nos nas redes sociais: @pazchurchmondubim\n\nEsperamos por você e sua família! 🙏`);
                         return;
                     }
 
                     if (lowerText === '2' || lowerText.includes('doar') || lowerText.includes('dízimo') || lowerText.includes('oferta') || lowerText.includes('pix')) {
                         // Ponto 3: Módulo de Contribuições (PIX)
-                        await this.sendMessage(remoteJid, `Que bênção! 🙏 Sua contribuição ajuda a expandir o Reino de Deus.\n\n📱 *Nossa Chave PIX (CNPJ)*:\n*56.895.009/0001-62*\n\nNome: Paz Church Paraipaba\n\n*"Cada um dê conforme determinou em seu coração, não com pesar ou por obrigação, pois Deus ama quem dá com alegria." - 2 Coríntios 9:7* 📖`);
+                        await this.sendMessage(remoteJid, `Que bênção! 🙏 Sua contribuição ajuda a expandir o Reino de Deus.\n\n📱 *Nossa Chave PIX:*\n*(Confirme a chave PIX com a liderança pelo canal oficial)*\n\nNome: Paz Church Mondubim\n\n*"Cada um dê conforme determinou em seu coração, não com pesar ou por obrigação, pois Deus ama quem dá com alegria." - 2 Coríntios 9:7* 📖`);
                         return;
                     }
 
@@ -460,7 +526,7 @@ Qual é o seu nome completo?`;
                         }
 
                         // Salva no Supabase (tabela prayer_requests)
-                        const { error: dbErr } = await supabase.from('prayer_requests').insert([{
+                        const { error: dbErr } = await supabase.from('prayer_requests_mondubim').insert([{
                             phone,
                             member_name: member?.name || 'Anônimo',
                             request: pedido,
@@ -491,7 +557,7 @@ Qual é o seu nome completo?`;
                         const diaSemana = now.getDay(); // 0 = Domingo
 
                         // Salva a presença no Supabase (tabela attendance)
-                        const { error: attErr } = await supabase.from('attendance').insert([{
+                        const { error: attErr } = await supabase.from('attendance_mondubim').insert([{
                             phone,
                             member_name: member?.name || 'Anônimo',
                             checked_in_at: now.toISOString(),
@@ -507,7 +573,7 @@ Qual é o seu nome completo?`;
                             // É domingo
                             resposta = `✅ *Presença registrada!*\n\nQue ótimo ter você aqui hoje, *${member?.name || 'irmão(a)'}*! 🔥\nQue o culto de hoje seja cheio da presença de Deus! 🙏👏`;
                         } else {
-                            resposta = `✅ *Presença registrada!*\n\nVocê registrou presença hoje. Que bom!\n\nLembre-se: o próximo culto é no *Domingo às 17h30* na Paz Church. \nEsperamos você! 📸🙏`;
+                            resposta = `✅ *Presença registrada!*\n\nVocê registrou presença hoje. Que bom!\n\nLembre-se: o próximo culto é no *Domingo às 17h30* na Paz Church Mondubim. \nEsperamos você! 📸🙏`;
                         }
 
                         await this.sendMessage(remoteJid, resposta);
@@ -568,25 +634,25 @@ Faça perguntas variadas (pode ser sobre personagens bíblicos, versículos famo
                         try {
                             // Total de membros
                             const { count: totalMembers } = await supabase
-                                .from('members').select('*', { count: 'exact', head: true });
+                                .from('members_mondubim').select('*', { count: 'exact', head: true });
 
                             // Novos esta semana
                             const umaSemanaAtras = new Date();
                             umaSemanaAtras.setDate(umaSemanaAtras.getDate() - 7);
                             const { count: newThisWeek } = await supabase
-                                .from('members')
+                                .from('members_mondubim')
                                 .select('*', { count: 'exact', head: true })
                                 .gte('created_at', umaSemanaAtras.toISOString());
 
                             // Presenças esta semana
                             const { count: attendanceWeek } = await supabase
-                                .from('attendance')
+                                .from('attendance_mondubim')
                                 .select('*', { count: 'exact', head: true })
                                 .gte('checked_in_at', umaSemanaAtras.toISOString());
 
                             // Pedidos de oração pendentes
                             const { count: prayerCount } = await supabase
-                                .from('prayer_requests')
+                                .from('prayer_requests_mondubim')
                                 .select('*', { count: 'exact', head: true })
                                 .gte('created_at', umaSemanaAtras.toISOString());
 
@@ -758,11 +824,11 @@ Faça perguntas variadas (pode ser sobre personagens bíblicos, versículos famo
                     const hour = brTime.getHours();
                     const minute = brTime.getMinutes();
 
-                    // Se for Domingo entre 16h e 19h (Pegamos uma margem de segurança de chegada e saída)
-                    if (isSunday && hour >= 16 && hour <= 19) {
-                        // Coordenadas aproximadas do centro de Paraipaba / Igreja (-3.44, -39.14)
-                        const churchLat = -3.4411;
-                        const churchLng = -39.1481;
+                    // Se for Domingo entre 15h30 e 20h (horário de culto Mondubim)
+                    if (isSunday && hour >= 15 && hour <= 20) {
+                        // Coordenadas do bairro Mondubim, Fortaleza-CE
+                        const churchLat = -3.8041;
+                        const churchLng = -38.5874;
 
                         // Cálculo da distância em Km (Fórmula de Haversine)
                         const R = 6371;
@@ -778,19 +844,20 @@ Faça perguntas variadas (pode ser sobre personagens bíblicos, versículos famo
                         if (distanceToChurch <= 5) {
                             let phone = remoteJid.replace(/\D/g, '');
                             const { data: member } = await supabase
-                                .from('members')
+                                .from('members_mondubim')
                                 .select('id, name')
                                 .or(`phone.eq.${phone},phone.eq.${phone.replace(/^55/, '')},phone.eq.55${phone}`)
                                 .maybeSingle();
 
-                            await supabase.from('attendance').insert([{
+                            await supabase.from('attendance_mondubim').insert([{
                                 phone,
                                 member_name: member?.name || 'Anônimo',
                                 checked_in_at: brTime.toISOString(),
                                 day_of_week: 0
                             }]);
 
-                            await this.sendMessage(remoteJid, "✅ *Presença Confirmada Automaticamente!* 📍\n\nIdentifiquei que você já está na região da Paz Church para o nosso culto!\n\nQue as bênçãos do Senhor sejam derramadas sobre você hoje! 🙏🔥");
+                            await this.sendMessage(remoteJid, "✅ *Presença Confirmada Automaticamente!* 📍\n\nIdentifiquei que você já está na região da Paz Church Mondubim!\n\nQue as bênçãos do Senhor sejam derramadas sobre você hoje! 🙏🔥");
+
                             return; // Encerra o fluxo aqui para não buscar célula, pois é hora do culto
                         }
                     }
@@ -798,7 +865,7 @@ Faça perguntas variadas (pode ser sobre personagens bíblicos, versículos famo
 
                     // Buscar Lives no Supabase
                     // Correção: Nome da tabela ajustado de 'lifes' para 'lives' conforme erro PGRST205
-                    const { data: lives, error } = await supabase.from('lives').select('*');
+                    const { data: lives, error } = await supabase.from('lives_mondubim').select('*');
 
                     if (error || !lives) {
                         console.error('Erro ao buscar lives:', error);

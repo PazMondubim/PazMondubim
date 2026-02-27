@@ -47,7 +47,14 @@ const authMiddleware = (req: Request, res: Response, next: NextFunction) => {
 };
 
 // Rota de Health Check
-app.get('/', (req, res) => res.send('Agente Igreja está vivo! 🚀'));
+app.get('/', (req, res) => res.send('Agente Igreja - Paz Church Mondubim está vivo! 🚀'));
+
+// Rota de Reconexão Manual (Admin)
+app.post('/api/reconnect', authMiddleware, async (req: Request, res: Response) => {
+    console.log('🔄 Reconexão manual solicitada via API...');
+    await waService.connectToWhatsApp();
+    res.json({ success: true, message: 'Tentativa de reconexão iniciada.' });
+});
 
 // --- API Endpoints ---
 
@@ -86,11 +93,11 @@ app.get('/api/members', async (req: Request, res: Response) => {
 // Dashboard Stats (Melhoria 1)
 app.get('/api/dashboard-stats', async (req: Request, res: Response) => {
     try {
-        const { count: totalMembers } = await supabase.from('members').select('*', { count: 'exact', head: true });
+        const { count: totalMembers } = await supabase.from('members_mondubim').select('*', { count: 'exact', head: true });
 
         // Simulação de "Novos Hoje" (precisaria de campo created_at, se não existir, retorno 0)
         // Agregação por Life Group
-        const { data: members } = await supabase.from('members').select('life_group');
+        const { data: members } = await supabase.from('members_mondubim').select('life_group');
 
         const lifeGroups: { [key: string]: number } = {};
         members?.forEach((m: any) => {
@@ -127,7 +134,7 @@ app.post('/api/members', async (req: Request, res: Response) => {
         return res.status(400).json({ error: 'Nome e telefone são obrigatórios' });
     }
 
-    const { data, error } = await supabase.from('members').insert([{
+    const { data, error } = await supabase.from('members_mondubim').insert([{
         name, phone, birth_date, address
     }]);
     if (error) return res.status(500).json({ error });
@@ -136,7 +143,7 @@ app.post('/api/members', async (req: Request, res: Response) => {
 
 // Listar Lives
 app.get('/api/lives', async (req, res) => {
-    const { data, error } = await supabase.from('lives').select('*');
+    const { data, error } = await supabase.from('lives_mondubim').select('*');
     if (error) return res.status(500).json({ error });
     res.json(data);
 });
@@ -185,7 +192,7 @@ app.post('/api/broadcast', authMiddleware, upload.single('image'), async (req: R
 
     try {
         // 1. Buscar todos os membros
-        const { data: members, error } = await supabase.from('members').select('*');
+        const { data: members, error } = await supabase.from('members_mondubim').select('*');
         if (error || !members) throw new Error('Erro ao buscar membros');
 
         // 2. Buscar Grupos onde o bot está

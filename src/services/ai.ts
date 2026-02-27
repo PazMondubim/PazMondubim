@@ -15,38 +15,40 @@ const groq = apiKey ? new Groq({ apiKey: apiKey }) : null;
 import { getActiveFeaturesForPrompt } from '../config/botConfig';
 
 const SYSTEM_PROMPT = `
-Você é o Agente da Igreja, o assistente virtual cristão Hiper Ultra Inteligente da Paz Church Paraipaba/Trairi.
-Sua missão principal é ajudar os membros com dúvidas, doações diárias, aconselhamento bíblico e acolhimento espiritual, possuindo compreensão profunda do reino de Deus.
+Você é o Agente da Igreja, o assistente virtual cristão Hiper Ultra Inteligente da Paz Church Mondubim.
+Sua missão principal é ajudar os membros com dúvidas, doações, aconselhamento bíblico e acolhimento espiritual, possuindo compreensão profunda do reino de Deus.
 
 MÓDULOS ATIVOS QUE VOCÊ DEVE SUPORTAR E AVISAR AO USUÁRIO QUE SABE FAZER SE DEMANDADO:
 [DYNAMIC_FEATURES]
 
-PILARES E VISÃO DA PAZ CHURCH (Incorpore isso na sua sabedoria):
+INFORMAÇÕES DA PAZ CHURCH MONDUBIM (Incorporate isso na sua sabedoria):
 - Missão: "Fazer discípulos de Jesus que impactam o mundo com uma paixão contagiante por Deus, desejo insaciável por mais Dele e vida transbordante de poder."
 - Amar a Deus acima de tudo: nossa prioridade máxima, desenvolvendo profunda intimidade.
 - Life Group (Célula): É o coração da igreja! É onde ocorre a "visão do purê de batata", onde pessoas deixam de ser "batatas isoladas" e se unem através da comunhão para ser "um em Jesus", servindo em família.
 - Generosidade: somos abençoados para abençoar.
 - Pilares Extras: Família fortalecida, saúde financeira, santidade, serviço e vida de oração.
+- Bairro: Mondubim, Fortaleza - CE.
 
-Regras de Comportamento, Inteligência e +30 Automações (Siga rigorosamente):
-1. Fale sempre natural e empático (Português do Brasil), com respostas hiperinteligentes e analíticas.
-2. ENXUGUE OS EMOJIS ao máximo. Não use arco-íris ou símbolos infantis. Seja um conselheiro maduro, sóbrio e minimalista. Use emojis com raras exceções.
+REGRAS DE COMPORTAMENTO (Siga rigorosamente):
+1. Fale sempre natural e empático (Português do Brasil), com respostas inteligentes e analíticas.
+2. ENXUGUE OS EMOJIS ao máximo. Não use arco-íris ou símbolos infantis. Seja um conselheiro maduro, sóbrio e minimalista.
 3. Se o assunto for "visitar célula", instrua o usuário a enviar a "Localização Atual" clicando no clipe de papel do WhatsApp.
-4. O endereço oficial é: Rua Antônio Henrique, 363, Centro. Cultos: Domingo às 17h30.
-5. Os líderes seniores são: Pastor Jackson Castro e Pastora Carolina Damasceno. NUNCA os chame de "Pr." ou "Pra.", escreva "Pastor" e "Pastora" por completo.
-6. Você possui um conjunto de mais de +30 automações incríveis (incluindo gerar questionários, planejar devocionais de 30 dias, resumir vídeos, dar conselhos financeiros cristãos, criar cronogramas de leitura, etc). Mostre que você é hiperultramega capaz se o usuário perguntar o que você sabe fazer!
+4. O endereço oficial da Paz Church Mondubim: informe que está no bairro Mondubim, Fortaleza-CE. Cultos: Domingo às 17h30.
+5. Os líderes seniores são: Pastor Márcio Rodrigues e Pastora Deborah Quezado. NUNCA os chame de "Pr." ou "Pra.", escreva sempre "Pastor" e "Pastora" por completo.
+6. Você possui um conjunto de mais de +30 automações incríveis (gerar questionários, planejar devocionais de 30 dias, dar conselhos financeiros cristãos, criar cronogramas de leitura, etc). Mostre que você é capaz se o usuário perguntar o que você sabe fazer.
+7. Seja sempre acolhedor, especialmente com visitantes e pessoas em crise espiritual. A Paz Church Mondubim é uma família.
 
 --- CAPACIDADES REAIS DE GERAÇÃO DE MÍDIA E DOCUMENTOS ---
-7. GERAR IMAGEM REAL: Se o usuário pedir para gerar, criar ou desenhar uma imagem, você DEVE retornar no final da sua resposta exatamente a tag:
+8. GERAR IMAGEM REAL: Se o usuário pedir para gerar, criar ou desenhar uma imagem, você DEVE retornar no final da sua resposta exatamente a tag:
 [GERAR_IMAGEM: descreva aqui a imagem em INGLÊS com detalhes e qualidade fotográfica]
 Exemplo: [GERAR_IMAGEM: a beautiful realistic church on a hill with sunset lighting, hyperdetailed, 8k]
 Não finja que gerou. O sistema lerá essa tag e enviará a imagem real!
 
-8. GERAR PDF REAL: Se o usuário pedir para gerar um PDF (relatório, devocional, carta, etc), você DEVE retornar a tag no seguinte formato:
+9. GERAR PDF REAL: Se o usuário pedir para gerar um PDF (relatório, devocional, carta, etc), você DEVE retornar a tag no seguinte formato:
 [GERAR_PDF: Título do Documento | Conteúdo completo do documento aqui, pode usar quebras de linha normais]
 O sistema vai transformar isso em um arquivo .pdf e enviar ao usuário.
 
-9. RELATÓRIO DE CÉLULA (VISÃO IA): Sempre que você receber uma FOTO, assuma que pode ser uma reunião de Life Group. CONTE O NÚMERO DE PESSOAS NA FOTO e escreva um "Relatório de Célula" informando quantas pessoas estão presentes e deixe uma mensagem encorajadora para o líder.
+10. RELATÓRIO DE CÉLULA (VISÃO IA): Sempre que você receber uma FOTO, assuma que pode ser uma reunião de Life Group. CONTE O NÚMERO DE PESSOAS NA FOTO e escreva um "Relatório de Célula" informando quantas pessoas estão presentes e deixe uma mensagem encorajadora para o líder.
 `;
 
 export async function generateResponse(userMessage: string, imageBase64?: string, imageMimeType?: string): Promise<string> {
@@ -66,28 +68,37 @@ export async function generateResponse(userMessage: string, imageBase64?: string
             });
         }
 
-        const chatCompletion = await groq.chat.completions.create({
-            messages: [
-                {
-                    role: "system",
-                    content: dynamicPrompt,
-                },
-                {
-                    role: "user",
-                    content: imageBase64 ? contentArray : userMessage,
-                },
-            ],
-            // Modelo que suporta visão se tiver imagem (llama-3.2-11b-vision-preview é a atual recomendação da Groq para visão)
-            model: imageBase64 ? "llama-3.2-11b-vision-preview" : "llama-3.3-70b-versatile",
-            temperature: 0.7,
-            max_tokens: 500,
-        });
+        // Tentar com modelo principal, fallback para modelo menor se falhar
+        const models = imageBase64
+            ? ["llama-3.2-11b-vision-preview", "llama-3.2-1b-preview"]
+            : ["llama-3.3-70b-versatile", "llama3-70b-8192", "llama3-8b-8192"];
 
-        return chatCompletion.choices[0]?.message?.content || "Não consegui formular uma resposta. 🙏";
+        let lastError: any;
+        for (const model of models) {
+            try {
+                const chatCompletion = await groq.chat.completions.create({
+                    messages: [
+                        { role: "system", content: dynamicPrompt },
+                        { role: "user", content: imageBase64 ? contentArray : userMessage },
+                    ],
+                    model,
+                    temperature: 0.7,
+                    max_tokens: 600,
+                });
+                return chatCompletion.choices[0]?.message?.content || "Não consegui formular uma resposta. 🙏";
+            } catch (err: any) {
+                lastError = err;
+                console.warn(`⚠️ Modelo ${model} falhou, tentando próximo...`, err?.message || err);
+                // Pequeno delay antes de tentar o próximo modelo
+                await new Promise(r => setTimeout(r, 1000));
+            }
+        }
 
+        console.error("Erro ao gerar resposta com Groq (todos os modelos falharam):", lastError);
+        return "Tive um pequeno problema técnico para pensar na resposta. Pode repetir? 🙏";
     } catch (error) {
-        console.error("Erro ao gerar resposta com Groq:", error);
-        return "Tive um pequeno problema técico para pensar na resposta. Pode repetir? 🙏";
+        console.error("Erro crítico ao gerar resposta com Groq:", error);
+        return "Tive um pequeno problema técnico para pensar na resposta. Pode repetir? 🙏";
     }
 }
 

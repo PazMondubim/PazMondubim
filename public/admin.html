@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Painel do Pastor - Paz Church Paraipaba</title>
+    <title>Painel do Pastor - Paz Church Mondubim</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -37,7 +37,7 @@
         <header
             class="flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-gray-100 gap-4">
             <div>
-                <h1 class="text-3xl font-bold gradient-text">Paz Church Paraipaba</h1>
+                <h1 class="text-3xl font-bold gradient-text">Paz Church Mondubim</h1>
                 <p class="text-gray-500 mt-1">Painel Administrativo do Agente Igreja</p>
             </div>
             <div class="flex flex-wrap gap-3">
@@ -424,7 +424,7 @@
                 const encodedUri = encodeURI(csvContent);
                 const link = document.createElement("a");
                 link.setAttribute("href", encodedUri);
-                link.setAttribute("download", "membros_igreja.csv");
+                link.setAttribute("download", "membros_paz_church_mondubim.csv");
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
@@ -611,6 +611,11 @@
 
         // Init
         checkAuth();
+
+        // Auto-refresh do dashboard a cada 30 segundos para monitorar status do bot em tempo real
+        setInterval(() => {
+            if (token) loadDashboard();
+        }, 30000);
     </script>
 </body>
 
