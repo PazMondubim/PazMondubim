@@ -7,7 +7,6 @@ RUN apk add --no-cache git
 
 # Cache Layer: Instala dependências antes de copiar o código todo
 COPY package.json ./
-# Assumindo que tsconfig também está fora com o package.json
 COPY tsconfig.json ./
 
 # Instala TODAS as dependências (dev e prod) para o build funcionar
@@ -22,7 +21,11 @@ COPY public ./public
 # Compila o TypeScript para JavaScript (gera a pasta dist)
 RUN npm run build
 
+# Porta configurável via variável de ambiente
+# Hugging Face Spaces usa 7860, outros hosts usam 3000
+ENV PORT=7860
+
+EXPOSE 7860
+
 # O comando para rodar o app
 CMD ["node", "dist/index.js"]
-
-EXPOSE 3000
