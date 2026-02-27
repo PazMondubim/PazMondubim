@@ -1,4 +1,14 @@
-# Agente Igreja WhatsApp
+---
+title: Projetomondubim
+emoji: ⛪
+colorFrom: indigo
+colorTo: purple
+sdk: docker
+pinned: true
+app_port: 7860
+---
+
+# Paz Church Mondubim — Agente Igreja Bot
 
 Sistema automatizado para gestão de membros e células da igreja via WhatsApp.
 
