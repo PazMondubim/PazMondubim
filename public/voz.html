@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Atendimento por Voz - Paz Church Mondubim</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #00d2ff;
+            --secondary: #3a7bd5;
+            --bg: #0f172a;
+            --card: rgba(30, 41, 59, 0.7);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Outfit', sans-serif;
+            background: radial-gradient(circle at top right, #1e293b, #0f172a);
+            color: white;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 500px;
+            padding: 2rem;
+            text-align: center;
+        }
+
+        .voice-card {
+            background: var(--card);
+            backdrop-filter: blur(12px);
+            border-radius: 2rem;
+            padding: 3rem 2rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            position: relative;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            background: #ef4444;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+            box-shadow: 0 0 10px #ef4444;
+        }
+
+        .status-dot.active {
+            background: #22c55e;
+            box-shadow: 0 0 10px #22c55e;
+        }
+
+        h1 {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
+        }
+
+        p {
+            color: #94a3b8;
+            margin-bottom: 2rem;
+        }
+
+        .visualizer {
+            height: 150px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            margin-bottom: 2rem;
+        }
+
+        .bar {
+            width: 4px;
+            height: 20px;
+            background: linear-gradient(to top, var(--secondary), var(--primary));
+            border-radius: 2px;
+            transition: height 0.1s ease;
+        }
+
+        .btn-start {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border: none;
+            color: white;
+            padding: 1rem 2.5rem;
+            font-size: 1.1rem;
+            font-weight: 600;
+            border-radius: 99px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 10px 20px -5px rgba(0, 210, 255, 0.4);
+        }
+
+        .btn-start:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 15px 30px -5px rgba(0, 210, 255, 0.6);
+        }
+
+        .btn-start:active {
+            transform: translateY(0);
+        }
+
+        .transcript {
+            margin-top: 2rem;
+            font-size: 0.9rem;
+            color: #cbd5e1;
+            min-height: 3em;
+            font-style: italic;
+        }
+
+        .listening-indicator {
+            position: absolute;
+            top: 2rem;
+            right: 2rem;
+            font-size: 0.8rem;
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="voice-card">
+            <div id="statusIndicator" class="listening-indicator">
+                <span class="status-dot active"></span> OUVINDO...
+            </div>
+
+            <h1>Paz Voice IA</h1>
+            <p id="subTitle">Fale com o conselheiro em tempo real</p>
+
+            <div class="visualizer" id="visualizer">
+                <!-- Bars added by JS -->
+            </div>
+
+            <button class="btn-start" id="startBtn">Começar Conversa</button>
+
+            <div class="transcript" id="transcript">Clique no botão para falar...</div>
+        </div>
+    </div>
+
+    <script>
+        const startBtn = document.getElementById('startBtn');
+        const transcriptDiv = document.getElementById('transcript');
+        const statusIndicator = document.getElementById('statusIndicator');
+        const visualizer = document.getElementById('visualizer');
+        const subTitle = document.getElementById('subTitle');
+
+        // Create visualizer bars
+        for (let i = 0; i < 20; i++) {
+            const bar = document.createElement('div');
+            bar.className = 'bar';
+            visualizer.appendChild(bar);
+        }
+        const bars = document.querySelectorAll('.bar');
+
+        let recognition;
+        let isActive = false;
+        let isBotSpeaking = false;
+
+        const synth = window.speechSynthesis;
+        const cid = new URLSearchParams(window.location.search).get('cid') || 'web-user';
+
+        if ('webkitSpeechRecognition' in window) {
+            recognition = new webkitSpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'pt-BR';
+
+            recognition.onstart = () => {
+                isActive = true;
+                statusIndicator.style.display = 'block';
+                startBtn.style.display = 'none';
+                subTitle.innerText = 'Pode falar, estou te ouvindo...';
+            };
+
+            recognition.onresult = (event) => {
+                if (isBotSpeaking) return;
+
+                let interimTranscript = '';
+                let finalTranscript = '';
+
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        finalTranscript += event.results[i][0].transcript;
+                    } else {
+                        interimTranscript += event.results[i][0].transcript;
+                    }
+                }
+
+                transcriptDiv.innerText = finalTranscript || interimTranscript;
+
+                if (finalTranscript) {
+                    processInput(finalTranscript);
+                }
+            };
+
+            recognition.onerror = (event) => {
+                console.error(event.error);
+                isActive = false;
+                statusIndicator.style.display = 'none';
+                startBtn.style.display = 'inline-block';
+            };
+        }
+
+        async function processInput(text) {
+            if (!text.trim()) return;
+
+            recognition.stop(); // Stop listening while bot responds
+            subTitle.innerText = 'Pensando...';
+
+            try {
+                const response = await fetch('/api/voice-chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text, cid: cid })
+                });
+                const data = await response.json();
+                speak(data.response);
+            } catch (e) {
+                speak("Tive um pequeno problema de conexão, pode repetir?");
+            }
+        }
+
+        function speak(text) {
+            isBotSpeaking = true;
+            subTitle.innerText = 'IA Falando...';
+            transcriptDiv.innerText = text;
+
+            // Remove visualizer animation for mic, add for voice
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'pt-BR';
+
+            // Try to find a nice male voice for "Pastor" feel
+            const voices = synth.getVoices();
+            const preferredVoice = voices.find(v => v.name.includes('Google português do Brasil')) || voices.find(v => v.lang === 'pt-BR');
+            if (preferredVoice) utterance.voice = preferredVoice;
+
+            utterance.onend = () => {
+                isBotSpeaking = false;
+                subTitle.innerText = 'Pode falar, estou ouvindo...';
+                recognition.start(); // Resume listening
+            };
+
+            synth.speak(utterance);
+            animateBarsSpeaking();
+        }
+
+        function animateBarsListening(stream) {
+            if (!isActive || isBotSpeaking) return;
+            const audioContext = new AudioContext();
+            const analyser = audioContext.createAnalyser();
+            const source = audioContext.createMediaStreamSource(stream);
+            source.connect(analyser);
+            analyser.fftSize = 64;
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+            function update() {
+                if (!isActive || isBotSpeaking) return;
+                analyser.getByteFrequencyData(dataArray);
+                bars.forEach((bar, i) => {
+                    const val = dataArray[i] / 2;
+                    bar.style.height = `${Math.max(10, val)}px`;
+                });
+                requestAnimationFrame(update);
+            }
+            update();
+        }
+
+        function animateBarsSpeaking() {
+            if (!isBotSpeaking) return;
+            bars.forEach((bar, i) => {
+                const random = Math.random() * 80 + 20;
+                bar.style.height = `${random}px`;
+            });
+            if (isBotSpeaking) setTimeout(animateBarsSpeaking, 100);
+            else bars.forEach(bar => bar.style.height = '10px');
+        }
+
+        startBtn.onclick = () => {
+            navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(stream => {
+                    recognition.start();
+                    animateBarsListening(stream);
+                })
+                .catch(err => {
+                    alert("Por favor, permita o acesso ao microfone.");
+                });
+        };
+    </script>
+</body>
+
+</html>

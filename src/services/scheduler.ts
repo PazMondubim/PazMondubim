@@ -1,10 +1,11 @@
 import cron from 'node-cron';
 import { supabase } from '../config/supabase';
 import { waService } from './whatsapp';
-import { generateResponse } from './ai'; // Usar IA para gerar devocional se possível
+import { getAIResponse } from './ai';
 
 // Configuração do ID do grupo da igreja via .env ou Hardcoded (Correção solicitada)
 const CHURCH_GROUP_ID = process.env.WHATSAPP_GROUP_ID || '120363134268223078@g.us';
+
 // Número do Pastor ou Líder Principal para notificações
 const LEADER_PHONE = process.env.LEADER_PHONE || '';
 
@@ -43,33 +44,40 @@ export function initScheduler() {
         // 1. Mandar DM privada para CADA UM
         for (const member of birthdays) {
             if (member.phone) {
-                const msg = `Olá *${member.name}*, a paz! 🕊️\n\nEm nome de toda a família Paz Church Mondubim, desejamos um Feliz Aniversário! 🎉🎂\nQue Deus continue te abençoando ricamente neste novo ciclo. Amamos você! ❤️`;
-
-                // Lógica de JID inteligente (igual ao whatsapp.ts)
                 let jid = member.phone;
                 if (!jid.includes('@')) {
-                    if (jid.length >= 14) {
-                        jid = `${jid}@lid`;
-                    } else {
-                        jid = `${jid}@s.whatsapp.net`;
-                    }
+                    jid = jid.length >= 14 ? `${jid}@lid` : `${jid}@s.whatsapp.net`;
                 }
 
-                await waService.sendMessage(jid, msg);
+                try {
+                    const prompt = `Gere uma mensagem curta e carinhosa de feliz aniversário de 1 parágrafo para o membro "${member.name}" da Paz Church Mondubim. Use um tom pastoral e amigável. Cite um versículo de benção.`;
+                    const aiMsg = await getAIResponse(prompt, member.phone);
+                    const msg = aiMsg && !aiMsg.includes("Desculpe") ? aiMsg : `Olá *${member.name}*! Feliz aniversário! 🎉 Que Deus te abençoe ricamente hoje e sempre. Amamos sua vida! ❤️`;
+
+                    await waService.sendMessage(jid, msg);
+                } catch (e) {
+                    const fallback = `Olá *${member.name}*, a paz! 🕊️\n\nDesejamos um Feliz Aniversário! 🎉🎂 Que o Senhor te abençoe ricamente hoje!`;
+                    await waService.sendMessage(jid, fallback);
+                }
             }
         }
 
         // 2. Mandar no Grupo uma Imagem Real Personalizada
         if (CHURCH_GROUP_ID) {
             for (const member of birthdays) {
-                // Montar o texto do post
-                const groupMsg = `🎉 *HOJE É DIA DE FESTA!* 🎉\n\nVamos celebrar a maravilhosa vida do(a) nosso(a) amado(a) *${member.name}*! 🎂🎈\n\nDesejamos que o Senhor derrame chuvas de bênçãos sobre a sua vida, lhe concedendo paz, saúde, alegria e muitos anos de vida na presença dEle!\n\n*"O Senhor te abençoe e te guarde; o Senhor faça resplandecer o seu rosto sobre ti e te conceda paz."* (Números 6:24-26)\n\nDeixem seus parabéns aqui! 👏👏🎈`;
+                try {
+                    const prompt = `Gere uma legenda festiva e alegre para um post de aniversário no grupo da igreja para o membro "${member.name}". Use emojis e termine convidando todos a darem parabéns.`;
+                    const aiGroupMsg = await getAIResponse(prompt, CHURCH_GROUP_ID);
+                    const groupMsg = aiGroupMsg && !aiGroupMsg.includes("Desculpe") ? aiGroupMsg : `🎉 *HOJE É DIA DE FESTA!* 🎉\n\nVamos celebrar a maravilhosa vida do(a) nosso(a) amado(a) *${member.name}*! 🎂🎈 Deixem seus parabéns aqui! 👏👏🎈`;
 
-                // Montar url da imagem (usando prompt em inglês customizado)
-                const promptImg = `A beautiful 3D birthday celebration card, Christian theme, bright and joyful, luxurious balloons and cake, elegant typography with the text "Feliz Aniversário ${member.name}", high quality, 8k`;
+                    // Montar url da imagem (usando prompt em inglês customizado)
+                    const promptImg = `A beautiful 3D birthday celebration card, Christian theme, bright and joyful, luxurious balloons and cake, elegant typography with the text "Feliz Aniversário ${member.name}", high quality, 8k`;
 
-                // Enviar a imagem com a legenda (via método do whatsapp.ts)
-                await waService.sendGeneratedImageMessage(CHURCH_GROUP_ID, promptImg, groupMsg);
+                    // Enviar a imagem com a legenda (via método do whatsapp.ts)
+                    await waService.sendGeneratedImageMessage(CHURCH_GROUP_ID, promptImg, groupMsg);
+                } catch (e) {
+                    console.error("Erro ao enviar aniversário no grupo:", e);
+                }
             }
         }
     }, { timezone: "America/Sao_Paulo" });
@@ -80,18 +88,35 @@ export function initScheduler() {
 
         console.log('📖 Enviando devocional diário...');
 
+        const themes = [
+            "Graça e Misericórdia", "Fé em tempos difíceis", "O poder da oração",
+            "Amor ao próximo", "Gratidão", "Sabedoria de Provérbios",
+            "A alegria do Senhor", "Caminhando com o Espírito Santo",
+            "Vencendo o medo", "Propósito de vida em Cristo"
+        ];
+        const randomTheme = themes[Math.floor(Math.random() * themes.length)];
+        const todayStr = new Date().toLocaleDateString('pt-BR');
+
         // Tentar gerar via IA ou usar lista pré-definida
         try {
             // Prompt para a IA gerar um devocional curto
-            const prompt = "Gere um devocional curto, inspirador e cristão para bom dia, com um versículo chave e uma breve reflexão de 1 parágrafo. Termine com uma oração curta. Use emojis.";
-            const devocional = await generateResponse(prompt);
+            const prompt = `Gere um devocional cristão INÉDITO para hoje (${todayStr}) sobre o tema "${randomTheme}". 
+            Instruções:
+            1. Um título inspirador.
+            2. Um versículo bíblico chave (capítulo e versículo).
+            3. Uma reflexão prática de 2 a 3 parágrafos curtos.
+            4. Uma oração final.
+            5. Use poucos emojis, mantenha um tom de conselheiro maduro.
+            Não repita textos anteriores.`;
 
-            if (devocional && !devocional.includes("Desculpe")) {
-                const msg = `☀️ *Bom dia Família!* ☀️\n\n${devocional}\n\nTenham um dia abençoado! 🙏`;
+            const devocional = await getAIResponse(prompt, CHURCH_GROUP_ID);
+
+            if (devocional && !devocional.includes("Desculpe") && !devocional.includes("problema técnico")) {
+                const msg = `☀️ *BOM DIA FAMÍLIA PAZ!* ☀️\n_Devocional ${todayStr}_\n\n${devocional}\n\nTenha um dia vitorioso em nome de Jesus! 🙏🔥`;
                 await waService.sendMessage(CHURCH_GROUP_ID, msg);
             } else {
-                // Fallback se a IA falhar
-                const fallbackMsg = `☀️ *Bom dia Família!* ☀️\n\n"Este é o dia que fez o Senhor; regozijemo-nos e alegremo-nos nele." - Salmos 118:24 📖\n\nQue seu dia seja cheio da presença de Deus! 🙏`;
+                // Fallback mais variado baseado no tema
+                const fallbackMsg = `☀️ *Bom dia Família!* ☀️\n\nHoje nossa reflexão é sobre *${randomTheme}*.\n\n"O Senhor é bom, um refúgio em tempos de angústia. Ele cuida dos que nele confiam." - Naum 1:7 📖\n\nQue sua manhã seja repleta da presença de Deus! 🙏`;
                 await waService.sendMessage(CHURCH_GROUP_ID, fallbackMsg);
             }
         } catch (e) {

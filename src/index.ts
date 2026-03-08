@@ -266,6 +266,20 @@ app.post('/api/broadcast', authMiddleware, upload.single('image'), async (req: R
     }
 });
 
+// Rota de Chat de Voz (Interação via Navegador)
+app.post('/api/voice-chat', async (req, res) => {
+    const { message, cid } = req.body;
+    try {
+        const { getAIResponse } = await import('./services/ai');
+        const jid = cid ? `${cid}@s.whatsapp.net` : 'web-user';
+        const aiResponse = await getAIResponse(message, jid);
+        res.json({ response: aiResponse });
+    } catch (error) {
+        console.error('Erro no voice-chat:', error);
+        res.status(500).json({ error: 'Erro ao processar voz' });
+    }
+});
+
 // Enviar mensagem individual (usado pelo broadcast do front)
 app.post('/api/send-message', async (req, res) => {
     const { phone, message, imageUrl } = req.body;
