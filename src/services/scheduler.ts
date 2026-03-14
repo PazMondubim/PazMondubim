@@ -19,7 +19,7 @@ export function initScheduler() {
         const day = today.getDate();
         const month = today.getMonth() + 1; // JS months are 0-indexed
 
-        const { data: members, error } = await supabase.from('members_paraipaba').select('*');
+        const { data: members, error } = await supabase.from('members_mondubim').select('*');
 
         if (error || !members) {
             console.error('Erro ao buscar membros para aniversário:', error);
@@ -50,7 +50,7 @@ export function initScheduler() {
                 }
 
                 try {
-                    const prompt = `Gere uma mensagem curta e carinhosa de feliz aniversário de 1 parágrafo para o membro "${member.name}" da Paz Church Paraipaba. Use um tom pastoral e amigável. Cite um versículo de benção.`;
+                    const prompt = `Gere uma mensagem curta e carinhosa de feliz aniversário de 1 parágrafo para o membro "${member.name}" da Paz Church Mondubim. Use um tom pastoral e amigável. Cite um versículo de benção.`;
                     const aiMsg = await getAIResponse(prompt, member.phone);
                     const msg = aiMsg && !aiMsg.includes("Desculpe") ? aiMsg : `Olá *${member.name}*! Feliz aniversário! 🎉 Que Deus te abençoe ricamente hoje e sempre. Amamos sua vida! ❤️`;
 
@@ -127,7 +127,7 @@ export function initScheduler() {
     // Tarefa 6: Lembrete de Culto de Domingo (Domingo às 09:00)
     cron.schedule('0 9 * * 0', async () => {
         if (!CHURCH_GROUP_ID) return;
-        const msg = `🚨 *Bom dia Família Paz! Hoje é dia de Celebração!* 🚨\n\nVenha buscar ao Senhor conosco na Casa do Pai! 🔥\n\n📍 Paz Church Paraipaba\n⏰ Horário: 17h30\n\nPrepare seu coração, traga sua família e convide um amigo! 🙏✨`;
+        const msg = `🚨 *Bom dia Família Paz! Hoje é dia de Celebração!* 🚨\n\nVenha buscar ao Senhor conosco na Casa do Pai! 🔥\n\n📍 Paz Church Mondubim\n⏰ Horários: 09h30 e 17h30\n\nPrepare seu coração, traga sua família e convide um amigo! 🙏✨`;
         await waService.sendMessage(CHURCH_GROUP_ID, msg);
     }, { timezone: "America/Sao_Paulo" });
 

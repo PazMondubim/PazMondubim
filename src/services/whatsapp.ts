@@ -182,7 +182,7 @@ export class WhatsAppService {
                         const baseUrl = process.env.SELF_URL ? process.env.SELF_URL.replace(/\/$/, '') : 'http://localhost:3000';
                         const voiceRoomLink = `${baseUrl}/voz.html?cid=${from.split('@')[0]}`;
 
-                        const msg = `🌟 *ATENDIMENTO POR VOZ EM REAL-TIME (GRÁTIS)* 🌟\n\nOlá! Notei sua ligação. Para conversarmos por voz em tempo real (estilo *ChatGPT Voice*), clique no link abaixo:\n\n🔗 ${voiceRoomLink}\n\nLá eu consigo te ouvir e falar sem custos! 🙏Paraipaba! 🎤`;
+                        const msg = `🌟 *ATENDIMENTO POR VOZ EM REAL-TIME (GRÁTIS)* 🌟\n\nOlá! Notei sua ligação. Para conversarmos por voz em tempo real (estilo *ChatGPT Voice*), clique no link abaixo:\n\n🔗 ${voiceRoomLink}\n\nLá eu consigo te ouvir e falar sem custos! 🙏 Paz Church Mondubim! 🎤`;
 
                         await this.sendMessage(from, msg);
                     }
@@ -288,11 +288,11 @@ export class WhatsAppService {
                         }
                         if (state.step === 'WAITING_LIFE_GROUP') {
                             state.data.life_group = textBody!.trim();
-                            const { error } = await supabase.from('members_paraipaba').insert([{ ...state.data, phone, neighborhood: state.data.address }]);
+                            const { error } = await supabase.from('members_mondubim').insert([{ ...state.data, phone, neighborhood: state.data.address }]);
                             if (error) await this.sendMessage(remoteJid, "Erro ao salvar.");
                             else {
                                 await this.sendMessage(remoteJid, `Cadastro concluído! ✅ Seja bem-vindo(a), *${state.data.name}*! 🙏`);
-                                if (this.LEADER_PHONE) this.sendMessage(this.LEADER_PHONE + '@s.whatsapp.net', `Novo membro (Paraipaba): ${state.data.name} (${state.data.phone_contact})`);
+                                if (this.LEADER_PHONE) this.sendMessage(this.LEADER_PHONE + '@s.whatsapp.net', `Novo membro (Mondubim): ${state.data.name} (${state.data.phone_contact})`);
                             }
                             delete this.userStates[remoteJid];
                             return;
@@ -313,13 +313,13 @@ export class WhatsAppService {
                         return;
                     }
 
-                    const { data: member } = await supabase.from('members_paraipaba').select('id, name').or(`phone.eq.${phone},phone.eq.55${phone}`).maybeSingle();
+                    const { data: member } = await supabase.from('members_mondubim').select('id, name').or(`phone.eq.${phone},phone.eq.55${phone}`).maybeSingle();
 
                     // Se for um novo membro OU se for uma palavra-chave de QR Code (ex: "quero me cadastrar", "visita", "culto")
-                    const isNewMemberAction = lowerText.includes('cadastrar') || lowerText.includes('visita') || lowerText.includes('culto') || lowerText.includes('paz paraipaba');
+                    const isNewMemberAction = lowerText.includes('cadastrar') || lowerText.includes('visita') || lowerText.includes('culto') || lowerText.includes('paz mondubim');
 
                     if (!member) {
-                        const welcomeMsg = `Olá! Que alegria ter você conosco aqui na *Paz Church Paraipaba*! 🕊️✨\n\nSeja muito bem-vindo(a)! Ficamos felizes em te receber no nosso culto. Para que possamos te conhecer melhor e te manter informado sobre tudo o que acontece na nossa família, vamos fazer seu cadastro rapidinho?\n\nPara começar, qual seu *nome completo*?`;
+                        const welcomeMsg = `Olá! Que alegria ter você conosco aqui na *Paz Church Mondubim*! 🕊️✨\n\nSeja muito bem-vindo(a)! Ficamos felizes em te receber no nosso culto. Para que possamos te conhecer melhor e te manter informado sobre tudo o que acontece na nossa família, vamos fazer seu cadastro rapidinho?\n\nPara começar, qual seu *nome completo*?`;
 
                         await this.sendMessage(remoteJid, welcomeMsg);
                         this.userStates[remoteJid] = {
@@ -342,7 +342,7 @@ export class WhatsAppService {
                     await this.sendMessage(remoteJid, "Como posso te ajudar hoje?\n\n1️⃣ Horários e Endereço\n2️⃣ Quero doar (Pix)\n3️⃣ Onde tem uma Life?\n4️⃣ Conversar com a IA\n5️⃣ Falar com a Liderança\n\n!oração [pedido] - Pedir oração\n!quiz - Quiz Bíblico");
                     return;
                 }
-                if (lowerText === '1') { await this.sendMessage(remoteJid, "📍 Paz Church Paraipaba - CE.\n⏰ Horário de Culto: Domingo às 17h30."); return; }
+                if (lowerText === '1') { await this.sendMessage(remoteJid, "📍 Paz Church Mondubim - Fortaleza.\n⏰ Horário de Culto: Domingo às 09h30 e 17h30."); return; }
                 if (lowerText === '2') { await this.sendMessage(remoteJid, "🙏 Sua generosidade ajuda o Reino. Chave Pix: (confirme com a secretaria)."); return; }
                 if (lowerText === '3') { await this.sendMessage(remoteJid, "Mande sua localização clicando no clipe 📎 e encontrarei a Life mais próxima! 📍"); return; }
                 if (lowerText === '5') { await this.sendMessage(remoteJid, "Transferindo para a liderança... 🙏"); if (this.LEADER_PHONE) this.sendMessage(this.LEADER_PHONE + '@s.whatsapp.net', `Atendimento humano solicitado por ${phone}`); return; }
