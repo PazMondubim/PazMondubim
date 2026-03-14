@@ -65,6 +65,11 @@
                     title="Forçar reconexão do WhatsApp">
                     🔄 Reconectar WA
                 </button>
+                <button onclick="clearWhatsAppSession()" id="clearSessionBtn"
+                    class="px-4 py-2 border border-red-200 text-red-600 rounded-xl font-medium hover:bg-red-50 transition flex items-center gap-2"
+                    title="Limpar arquivos de sessão e deslogar do WhatsApp">
+                    🗑️ Limpar Sessão
+                </button>
                 <button onclick="toggleMaintenance()" id="maintenanceBtn"
                     class="px-4 py-2 border border-gray-300 text-gray-600 rounded-xl font-medium hover:bg-gray-50 transition flex items-center gap-2">
                     🛠️ Modo Manutenção
@@ -318,6 +323,44 @@
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = '🔄 Reconectar WA';
+            }
+        }
+
+        async function clearWhatsAppSession() {
+            const result = await Swal.fire({
+                title: 'Limpar Sessão?',
+                text: "Isso removerá os arquivos de conexão do WhatsApp. Você precisará escanear o QR Code novamente. Continuar?",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6',
+                confirmButtonText: 'Sim, limpar!',
+                cancelButtonText: 'Cancelar'
+            });
+
+            if (!result.isConfirmed) return;
+
+            const btn = document.getElementById('clearSessionBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Limpando...';
+            try {
+                const res = await fetch(getApiUrl().replace('/api', '') + '/api/logout', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await res.json();
+                Swal.fire({
+                    title: 'Sessão Limpa',
+                    text: data.message || 'Sessão removida! Clique em "Conectar WhatsApp" para ver o novo QR Code.',
+                    icon: 'success'
+                }).then(() => {
+                    location.reload(); // Recarrega para refletir o status offline
+                });
+            } catch (e) {
+                Swal.fire('Erro', 'Não foi possível limpar a sessão.', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '🗑️ Limpar Sessão';
             }
         }
 

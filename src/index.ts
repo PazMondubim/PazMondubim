@@ -47,13 +47,20 @@ const authMiddleware = (req: Request, res: Response, next: NextFunction) => {
 };
 
 // Rota de Health Check
-app.get('/', (req, res) => res.send('Agente Igreja - Paz Church Mondubim está vivo! 🚀'));
+app.get('/', (req, res) => res.send('Agente Igreja - Paz Church Paraipaba está vivo! 🚀'));
 
 // Rota de Reconexão Manual (Admin)
 app.post('/api/reconnect', authMiddleware, async (req: Request, res: Response) => {
     console.log('🔄 Reconexão manual solicitada via API...');
     await waService.connectToWhatsApp();
     res.json({ success: true, message: 'Tentativa de reconexão iniciada.' });
+});
+
+// Rota para Limpar Sessão (Admin)
+app.post('/api/logout', authMiddleware, async (req: Request, res: Response) => {
+    console.log('🗑️ Solicitação para limpar sessão recebida...');
+    await waService.logout();
+    res.json({ success: true, message: 'Sessão limpa com sucesso. Agora você pode conectar novamente.' });
 });
 
 // --- API Endpoints ---
@@ -68,7 +75,7 @@ app.get('/api/members', async (req: Request, res: Response) => {
     const search = req.query.search as string;
 
     let query = supabase
-        .from('members_mondubim')
+        .from('members_paraipaba')
         .select('*', { count: 'exact' });
 
     if (search) {
@@ -93,11 +100,11 @@ app.get('/api/members', async (req: Request, res: Response) => {
 // Dashboard Stats (Melhoria 1)
 app.get('/api/dashboard-stats', async (req: Request, res: Response) => {
     try {
-        const { count: totalMembers } = await supabase.from('members_mondubim').select('*', { count: 'exact', head: true });
+        const { count: totalMembers } = await supabase.from('members_paraipaba').select('*', { count: 'exact', head: true });
 
         // Simulação de "Novos Hoje" (precisaria de campo created_at, se não existir, retorno 0)
         // Agregação por Life Group
-        const { data: members } = await supabase.from('members_mondubim').select('life_group');
+        const { data: members } = await supabase.from('members_paraipaba').select('life_group');
 
         const lifeGroups: { [key: string]: number } = {};
         members?.forEach((m: any) => {
@@ -134,7 +141,7 @@ app.post('/api/members', async (req: Request, res: Response) => {
         return res.status(400).json({ error: 'Nome e telefone são obrigatórios' });
     }
 
-    const { data, error } = await supabase.from('members_mondubim').insert([{
+    const { data, error } = await supabase.from('members_paraipaba').insert([{
         name, phone, birth_date, address
     }]);
     if (error) return res.status(500).json({ error });
@@ -143,7 +150,7 @@ app.post('/api/members', async (req: Request, res: Response) => {
 
 // Listar Lives
 app.get('/api/lives', async (req, res) => {
-    const { data, error } = await supabase.from('lives_mondubim').select('*');
+    const { data, error } = await supabase.from('lives_paraipaba').select('*');
     if (error) return res.status(500).json({ error });
     res.json(data);
 });
@@ -192,7 +199,7 @@ app.post('/api/broadcast', authMiddleware, upload.single('image'), async (req: R
 
     try {
         // 1. Buscar todos os membros
-        const { data: members, error } = await supabase.from('members_mondubim').select('*');
+        const { data: members, error } = await supabase.from('members_paraipaba').select('*');
         if (error || !members) throw new Error('Erro ao buscar membros');
 
         // 2. Buscar Grupos onde o bot está
@@ -267,12 +274,39 @@ app.post('/api/broadcast', authMiddleware, upload.single('image'), async (req: R
 });
 
 // Rota de Chat de Voz (Interação via Navegador)
+import { textToSpeech } from './services/tts';
+import * as fs from 'fs';
+
+app.get('/api/tts', async (req: Request, res: Response) => {
+    const text = req.query.text as string;
+    if (!text) return res.status(400).send('Texto necessário');
+    try {
+        const audioPath = await textToSpeech(text);
+        if (audioPath && fs.existsSync(audioPath)) {
+            res.setHeader('Content-Type', 'audio/mpeg');
+            const stream = fs.createReadStream(audioPath);
+            stream.pipe(res);
+            // Opcional: deletar arquivo após stream, mas para simplicidade e cache deixamos por enquanto 
+            // ou removemos com um timeout curto.
+            stream.on('end', () => {
+                setTimeout(() => { try { fs.unlinkSync(audioPath); } catch (e) { } }, 5000);
+            });
+        } else {
+            res.status(500).send('Erro ao gerar áudio');
+        }
+    } catch (e) {
+        res.status(500).send('Erro TTS');
+    }
+});
+
 app.post('/api/voice-chat', async (req, res) => {
-    const { message, cid } = req.body;
+    const { message, text, cid } = req.body;
+    const input = message || text;
+    if (!input) return res.status(400).json({ error: 'Mensagem obrigatória' });
     try {
         const { getAIResponse } = await import('./services/ai');
         const jid = cid ? `${cid}@s.whatsapp.net` : 'web-user';
-        const aiResponse = await getAIResponse(message, jid);
+        const aiResponse = await getAIResponse(input, jid);
         res.json({ response: aiResponse });
     } catch (error) {
         console.error('Erro no voice-chat:', error);
@@ -296,9 +330,12 @@ app.post('/api/send-message', async (req, res) => {
     }
 });
 
-// Rota Admin - Proteção básica poderia ser aqui também
 app.get('/admin', (req, res) => {
     res.sendFile('admin.html', { root: 'public' });
+});
+
+app.get('/voz', (req, res) => {
+    res.sendFile('voz.html', { root: 'public' });
 });
 
 // Correção 10: Variável currentQR removida (código morto)

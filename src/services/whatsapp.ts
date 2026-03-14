@@ -88,43 +88,77 @@ export class WhatsAppService {
 
     async connectToWhatsApp() {
         try {
-            const { version } = await fetchLatestBaileysVersion();
+            let version;
+            try {
+                const latest = await fetchLatestBaileysVersion();
+                version = latest.version;
+                console.log(`📡 Usando Baileys v${version.join('.')}`);
+            } catch (e) {
+                console.warn('⚠️ Erro ao buscar versão do WhatsApp, usando fallback...');
+                version = [2, 3000, 1015901307]; // Fallback genérico estável
+            }
+
             const { state, saveCreds } = await useMultiFileAuthState(this.authStateStr);
 
             if (this.sock) {
-                try { this.sock.end(undefined); } catch (e) { }
+                try { 
+                    this.sock.ev.removeAllListeners('connection.update');
+                    this.sock.ev.removeAllListeners('creds.update');
+                    this.sock.ev.removeAllListeners('messages.upsert');
+                    this.sock.end(undefined); 
+                } catch (e) { }
                 this.sock = undefined;
             }
 
             this.sock = makeWASocket({
-                logger: pino({ level: 'silent' }),
+                logger: pino({ level: 'info' }), // Ativado info para facilitar debug do usuário
                 auth: state,
                 version,
+                browser: Browsers.ubuntu('Chrome'), // Melhora a compatibilidade e evita quedas
                 syncFullHistory: false,
                 markOnlineOnConnect: true,
-                keepAliveIntervalMs: 25000,
+                keepAliveIntervalMs: 30000,
+                defaultQueryTimeoutMs: 60000,
             });
 
             this.sock.ev.on('connection.update', (update: any) => {
                 const { connection, lastDisconnect, qr } = update;
+                
                 if (qr) {
                     this.qrCodeString = qr;
+                    console.log('💠 Novo QR Code gerado. Escaneie para conectar.');
                     qrcode.generate(qr, { small: true });
                 }
+
                 if (connection === 'close') {
                     this.isConnected = false;
                     const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
+                    const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+
+                    console.log(`❌ Conexão fechada. Motivo: ${statusCode || 'Desconhecido'}`);
+
                     if (statusCode === DisconnectReason.loggedOut) {
+                        console.log('🚪 Sessão encerrada. Limpando dados de autenticação...');
                         const authPath = path.resolve(this.authStateStr);
-                        if (fs.existsSync(authPath)) fs.rmSync(authPath, { recursive: true, force: true });
+                        if (fs.existsSync(authPath)) {
+                            fs.rmSync(authPath, { recursive: true, force: true });
+                        }
+                        this.qrCodeString = null;
+                        this.retryCount = 0;
                     }
-                    this.retryCount++;
-                    this.scheduleReconnect(10000);
+
+                    if (shouldReconnect) {
+                        this.retryCount++;
+                        const delay = Math.min(10000 * Math.pow(1.5, this.retryCount), 60000);
+                        console.log(`⏳ Agendando reconexão em ${Math.round(delay/1000)}s... (Tentativa ${this.retryCount})`);
+                        this.scheduleReconnect(delay);
+                    }
                 } else if (connection === 'open') {
                     this.isConnected = true;
                     this.qrCodeString = null;
                     this.retryCount = 0;
                     this.lastMessageAt = Date.now();
+                    console.log('✅ WhatsApp conectado com sucesso! 🚀');
                 }
             });
 
@@ -148,7 +182,7 @@ export class WhatsAppService {
                         const baseUrl = process.env.SELF_URL ? process.env.SELF_URL.replace(/\/$/, '') : 'http://localhost:3000';
                         const voiceRoomLink = `${baseUrl}/voz.html?cid=${from.split('@')[0]}`;
 
-                        const msg = `🌟 *ATENDIMENTO POR VOZ EM REAL-TIME (GRÁTIS)* 🌟\n\nOlá! Notei sua ligação. Para conversarmos por voz em tempo real (estilo *ChatGPT Voice*), clique no link abaixo:\n\n🔗 ${voiceRoomLink}\n\nLá eu consigo te ouvir e falar sem custos! 🙏🎤`;
+                        const msg = `🌟 *ATENDIMENTO POR VOZ EM REAL-TIME (GRÁTIS)* 🌟\n\nOlá! Notei sua ligação. Para conversarmos por voz em tempo real (estilo *ChatGPT Voice*), clique no link abaixo:\n\n🔗 ${voiceRoomLink}\n\nLá eu consigo te ouvir e falar sem custos! 🙏Paraipaba! 🎤`;
 
                         await this.sendMessage(from, msg);
                     }
@@ -254,11 +288,11 @@ export class WhatsAppService {
                         }
                         if (state.step === 'WAITING_LIFE_GROUP') {
                             state.data.life_group = textBody!.trim();
-                            const { error } = await supabase.from('members_mondubim').insert([{ ...state.data, phone, neighborhood: state.data.address }]);
+                            const { error } = await supabase.from('members_paraipaba').insert([{ ...state.data, phone, neighborhood: state.data.address }]);
                             if (error) await this.sendMessage(remoteJid, "Erro ao salvar.");
                             else {
                                 await this.sendMessage(remoteJid, `Cadastro concluído! ✅ Seja bem-vindo(a), *${state.data.name}*! 🙏`);
-                                if (this.LEADER_PHONE) this.sendMessage(this.LEADER_PHONE + '@s.whatsapp.net', `Novo membro: ${state.data.name} (${state.data.phone_contact})`);
+                                if (this.LEADER_PHONE) this.sendMessage(this.LEADER_PHONE + '@s.whatsapp.net', `Novo membro (Paraipaba): ${state.data.name} (${state.data.phone_contact})`);
                             }
                             delete this.userStates[remoteJid];
                             return;
@@ -279,10 +313,26 @@ export class WhatsAppService {
                         return;
                     }
 
-                    const { data: member } = await supabase.from('members_mondubim').select('id, name').or(`phone.eq.${phone},phone.eq.55${phone}`).maybeSingle();
+                    const { data: member } = await supabase.from('members_paraipaba').select('id, name').or(`phone.eq.${phone},phone.eq.55${phone}`).maybeSingle();
+
+                    // Se for um novo membro OU se for uma palavra-chave de QR Code (ex: "quero me cadastrar", "visita", "culto")
+                    const isNewMemberAction = lowerText.includes('cadastrar') || lowerText.includes('visita') || lowerText.includes('culto') || lowerText.includes('paz paraipaba');
+
                     if (!member) {
-                        await this.sendMessage(remoteJid, "Olá! Que alegria ter você aqui na Paz Church Mondubim! 🕊️\n\nVamos fazer seu cadastro rapidinho? Qual seu nome completo?");
-                        this.userStates[remoteJid] = { type: 'REGISTRATION', step: 'WAITING_NAME', data: {}, lastInteraction: Date.now(), notifiedInactivity: false };
+                        const welcomeMsg = `Olá! Que alegria ter você conosco aqui na *Paz Church Paraipaba*! 🕊️✨\n\nSeja muito bem-vindo(a)! Ficamos felizes em te receber no nosso culto. Para que possamos te conhecer melhor e te manter informado sobre tudo o que acontece na nossa família, vamos fazer seu cadastro rapidinho?\n\nPara começar, qual seu *nome completo*?`;
+
+                        await this.sendMessage(remoteJid, welcomeMsg);
+                        this.userStates[remoteJid] = {
+                            type: 'REGISTRATION',
+                            step: 'WAITING_NAME',
+                            data: {},
+                            lastInteraction: Date.now(),
+                            notifiedInactivity: false
+                        };
+                        return;
+                    } else if (isNewMemberAction) {
+                        // Se já é membro mas mandou a palavra do QR Code, apenas saúda
+                        await this.sendMessage(remoteJid, `Olá, *${member.name}*! Que bom te ver por aqui novamente no nosso culto! 🙏✨ Como posso te ajudar hoje?`);
                         return;
                     }
                 }
@@ -292,7 +342,7 @@ export class WhatsAppService {
                     await this.sendMessage(remoteJid, "Como posso te ajudar hoje?\n\n1️⃣ Horários e Endereço\n2️⃣ Quero doar (Pix)\n3️⃣ Onde tem uma Life?\n4️⃣ Conversar com a IA\n5️⃣ Falar com a Liderança\n\n!oração [pedido] - Pedir oração\n!quiz - Quiz Bíblico");
                     return;
                 }
-                if (lowerText === '1') { await this.sendMessage(remoteJid, "📍 Mondubim, Fortaleza.\n⏰ Terça 19h30 | Sexta 19h30 | Dom 09h30 e 17h30."); return; }
+                if (lowerText === '1') { await this.sendMessage(remoteJid, "📍 Paz Church Paraipaba - CE.\n⏰ Horário de Culto: Domingo às 17h30."); return; }
                 if (lowerText === '2') { await this.sendMessage(remoteJid, "🙏 Sua generosidade ajuda o Reino. Chave Pix: (confirme com a secretaria)."); return; }
                 if (lowerText === '3') { await this.sendMessage(remoteJid, "Mande sua localização clicando no clipe 📎 e encontrarei a Life mais próxima! 📍"); return; }
                 if (lowerText === '5') { await this.sendMessage(remoteJid, "Transferindo para a liderança... 🙏"); if (this.LEADER_PHONE) this.sendMessage(this.LEADER_PHONE + '@s.whatsapp.net', `Atendimento humano solicitado por ${phone}`); return; }
@@ -412,7 +462,33 @@ export class WhatsAppService {
     async sendAudioMessage(to: string, audioPath: string) {
         if (!this.sock) return;
         const jid = to.includes('@') ? to : (to.length >= 14 ? `${to}@lid` : `${to}@s.whatsapp.net`);
-        await this.sock.sendMessage(jid, { audio: fs.readFileSync(audioPath), mimetype: 'audio/ogg; codecs=opus', ptt: true });
+        const isMp3 = audioPath.endsWith('.mp3');
+        await this.sock.sendMessage(jid, {
+            audio: fs.readFileSync(audioPath),
+            mimetype: isMp3 ? 'audio/mpeg' : 'audio/ogg; codecs=opus',
+            ptt: true
+        });
+    }
+
+    async logout() {
+        this.isConnected = false;
+        if (this.sock) {
+            try { 
+                this.sock.ev.removeAllListeners('connection.update');
+                this.sock.ev.removeAllListeners('creds.update');
+                this.sock.ev.removeAllListeners('messages.upsert');
+                this.sock.end(undefined); 
+            } catch (e) { }
+            this.sock = undefined;
+        }
+        const authPath = path.resolve(this.authStateStr);
+        if (fs.existsSync(authPath)) {
+            console.log(`🗑️ Removendo pasta de sessão: ${authPath}`);
+            fs.rmSync(authPath, { recursive: true, force: true });
+        }
+        this.qrCodeString = null;
+        this.retryCount = 0;
+        console.log('✅ Sessão limpa manualmente com sucesso.');
     }
 
     async sendImage(to: string, content: string | Buffer, caption?: string) {
